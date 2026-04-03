@@ -1,0 +1,6 @@
+.venv/
+.platformio-core/
+examples/.esphome/
+__pycache__/
+*.pyc
+.DS_Store

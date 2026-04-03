@@ -1,0 +1,194 @@
+external_components:
+  - source:
+      type: local
+      path: ../components
+    components:
+      - viewesmart_rotary_encoder
+      - viewesmart_knob_button
+      - viewesmart_touchscreen
+
+esphome:
+  name: dial-display
+  friendly_name: Dial Display
+  on_boot:
+    priority: -100
+    then:
+      - lambda: |-
+          id(current_volume_percent) = 50;
+          id(current_brightness_percent) = 50;
+          id(current_blinds_percent) = 30;
+          id(volume_muted) = false;
+          id(light_on) = true;
+          id(blinds_open) = true;
+      - sensor.viewesmart_rotary_encoder.set_value:
+          id: knob_encoder
+          value: 50
+
+esp32:
+  board: esp32-s3-devkitc-1
+  framework:
+    type: esp-idf
+
+logger:
+
+psram:
+  mode: octal
+  speed: 80MHz
+
+globals:
+  - id: current_volume_percent
+    type: int
+    restore_value: no
+    initial_value: "50"
+  - id: current_brightness_percent
+    type: int
+    restore_value: no
+    initial_value: "50"
+  - id: current_blinds_percent
+    type: int
+    restore_value: no
+    initial_value: "30"
+  - id: syncing_local
+    type: bool
+    restore_value: no
+    initial_value: "false"
+  - id: max_volume_percent
+    type: int
+    restore_value: no
+    initial_value: "70"
+  - id: long_press_triggered
+    type: bool
+    restore_value: no
+    initial_value: "false"
+  - id: volume_muted
+    type: bool
+    restore_value: no
+    initial_value: "false"
+  - id: light_on
+    type: bool
+    restore_value: no
+    initial_value: "true"
+  - id: blinds_open
+    type: bool
+    restore_value: no
+    initial_value: "true"
+
+i2c:
+  sda: GPIO1
+  scl: GPIO3
+  scan: true
+
+spi:
+  id: display_qspi
+  type: quad
+  clk_pin: GPIO10
+  data_pins: [GPIO13, GPIO11, GPIO14, GPIO9]
+
+display:
+  - platform: mipi_spi
+    id: round_display
+    model: CO5300
+    bus_mode: quad
+    cs_pin: GPIO12
+    reset_pin: GPIO8
+    enable_pin: GPIO17
+    dimensions:
+      width: 466
+      height: 466
+      offset_width: 6
+    update_interval: never
+    auto_clear_enabled: false
+    color_order: rgb
+
+sensor:
+  - platform: viewesmart_rotary_encoder
+    id: knob_encoder
+    name: "Knob value"
+    pin_a:
+      number: GPIO5
+      mode:
+        input: true
+        pullup: true
+    pin_b:
+      number: GPIO6
+      mode:
+        input: true
+        pullup: true
+    resolution: 2
+    min_value: 0
+    max_value: 100
+    restore_mode: ALWAYS_ZERO
+    publish_initial_value: true
+
+    on_value:
+      then:
+        - if:
+            condition:
+              lambda: "return id(syncing_local);"
+            then:
+              - lambda: "id(syncing_local) = false;"
+            else:
+              - if:
+                  condition:
+                    lvgl.page.is_showing: brightness_page
+                  then:
+                    - lambda: |-
+                        int v = (int) x;
+                        if (v < 0) v = 0;
+                        if (v > 100) v = 100;
+                        id(current_brightness_percent) = v;
+                  else:
+                    - if:
+                        condition:
+                          lvgl.page.is_showing: blinds_page
+                        then:
+                          - lambda: |-
+                              int v = (int) x;
+                              if (v < 0) v = 0;
+                              if (v > 100) v = 100;
+                              id(current_blinds_percent) = v;
+                              id(blinds_open) = (v > 0);
+                        else:
+                          - lambda: |-
+                              int v = (int) x;
+                              if (v < 0) v = 0;
+                              if (v > id(max_volume_percent)) v = id(max_volume_percent);
+                              id(current_volume_percent) = v;
+                          - if:
+                              condition:
+                                lambda: "return (int)x > id(max_volume_percent);"
+                              then:
+                                - lambda: "id(syncing_local) = true;"
+                                - sensor.viewesmart_rotary_encoder.set_value:
+                                    id: knob_encoder
+                                    value: !lambda "return id(max_volume_percent);"
+
+binary_sensor:
+  - platform: viewesmart_knob_button
+    id: knob_button
+    name: "Knob Button"
+    debounce_time: 15ms
+
+    on_press:
+      then:
+        - lambda: "id(long_press_triggered) = false;"
+
+touchscreen:
+  platform: viewesmart_touchscreen
+  id: board_touch
+  display: round_display
+  update_interval: 16ms
+  on_touch:
+    then:
+      - logger.log:
+          format: "Touch x=%d y=%d"
+          args: ["touch.x", "touch.y"]
+
+lvgl:
+  pages:
+    - id: volume_page
+      widgets: []
+    - id: brightness_page
+      widgets: []
+    - id: blinds_page
+      widgets: []
