@@ -1,0 +1,595 @@
+external_components:
+  - source:
+      type: local
+      path: /Users/grinderslev/Documents/esphome-dial-display-encoder/components
+    components:
+      - viewesmart_rotary_encoder
+      - viewesmart_knob_button
+      - viewesmart_touchscreen
+
+esphome:
+  name: dial-display
+  friendly_name: Dial Display
+  on_boot:
+    priority: -100
+    then:
+      - lambda: |-
+          id(current_volume_percent) = 50;
+          id(current_brightness_percent) = 50;
+          id(current_blinds_percent) = 30;
+          id(volume_muted) = false;
+          id(light_on) = true;
+          id(blinds_open) = true;
+      - sensor.viewesmart_rotary_encoder.set_value:
+          id: knob_encoder
+          value: 50
+
+      - lvgl.arc.update:
+          id: volume_arc
+          value: 50
+          indicator:
+            arc_color: 0x585AFF
+      - lvgl.label.update:
+          id: volume_value
+          text: "50 %"
+          text_font: montserrat_48
+          y: 200
+      - lvgl.label.update:
+          id: volume_title
+          text: "VOLUME"
+
+      - lvgl.arc.update:
+          id: brightness_arc
+          value: 50
+          indicator:
+            arc_color: 0xFFC34D
+      - lvgl.label.update:
+          id: brightness_value
+          text: "50 %"
+      - lvgl.label.update:
+          id: brightness_title
+          text: "BRIGHTNESS"
+
+      - lvgl.obj.update:
+          id: blinds_fill
+          y: 65
+          height: 95
+      - lvgl.obj.update:
+          id: blinds_fill_highlight
+          y: 65
+          height: 95
+      - lvgl.label.update:
+          id: blinds_value
+          text: "30 %"
+      - lvgl.label.update:
+          id: blinds_title
+          text: "BLINDS"
+
+      - lvgl.page.show: volume_page
+
+esp32:
+  board: esp32-s3-devkitc-1
+  framework:
+    type: esp-idf
+
+logger:
+
+api:
+  encryption:
+    key: "Nxq1U9IiGp0OmPXRilut7ZHg/YWvn+kKFcjolDd55EM="
+
+ota:
+  - platform: esphome
+    password: "35e0ac0a2eaa808c4119a46f48d5c5f8"
+
+wifi:
+  ssid: "REPLACE_WITH_WIFI_SSID"
+  password: "REPLACE_WITH_WIFI_PASSWORD"
+  ap:
+    ssid: "Dial-Display Fallback Hotspot"
+    password: "jU1qHVqTcf8R"
+
+captive_portal:
+
+psram:
+  mode: octal
+  speed: 80MHz
+
+globals:
+  - id: current_volume_percent
+    type: int
+    restore_value: no
+    initial_value: "50"
+
+  - id: current_brightness_percent
+    type: int
+    restore_value: no
+    initial_value: "50"
+
+  - id: current_blinds_percent
+    type: int
+    restore_value: no
+    initial_value: "30"
+
+  - id: syncing_local
+    type: bool
+    restore_value: no
+    initial_value: "false"
+
+  - id: max_volume_percent
+    type: int
+    restore_value: no
+    initial_value: "70"
+
+  - id: long_press_triggered
+    type: bool
+    restore_value: no
+    initial_value: "false"
+
+  - id: volume_muted
+    type: bool
+    restore_value: no
+    initial_value: "false"
+
+  - id: light_on
+    type: bool
+    restore_value: no
+    initial_value: "true"
+
+  - id: blinds_open
+    type: bool
+    restore_value: no
+    initial_value: "true"
+
+script:
+  - id: update_volume_ui
+    mode: restart
+    then:
+      - lvgl.arc.update:
+          id: volume_arc
+          value: !lambda "return id(current_volume_percent);"
+          indicator:
+            arc_color: !lambda |-
+              return id(volume_muted) ? lv_color_hex(0x6A6A6A) : lv_color_hex(0x585AFF);
+      - if:
+          condition:
+            lambda: "return id(volume_muted);"
+          then:
+            - lvgl.label.update:
+                id: volume_value
+                text: "MUTED"
+                text_font: montserrat_44
+                y: 196
+          else:
+            - lvgl.label.update:
+                id: volume_value
+                text: !lambda |-
+                  char buf[8];
+                  snprintf(buf, sizeof(buf), "%d %%", id(current_volume_percent));
+                  return std::string(buf);
+                text_font: montserrat_48
+                y: 200
+
+  - id: update_brightness_ui
+    mode: restart
+    then:
+      - lvgl.arc.update:
+          id: brightness_arc
+          value: !lambda "return id(current_brightness_percent);"
+          indicator:
+            arc_color: !lambda |-
+              return id(light_on) ? lv_color_hex(0xFFC34D) : lv_color_hex(0x6A6A6A);
+      - lvgl.label.update:
+          id: brightness_value
+          text: !lambda |-
+            if (!id(light_on)) {
+              return std::string("OFF");
+            }
+            char buf[8];
+            snprintf(buf, sizeof(buf), "%d %%", id(current_brightness_percent));
+            return std::string(buf);
+
+  - id: update_blinds_ui
+    mode: restart
+    then:
+      - lvgl.obj.update:
+          id: blinds_fill
+          y: 65
+          height: !lambda |-
+            return (int) roundf((id(current_blinds_percent) / 100.0f) * 315.0f);
+      - lvgl.obj.update:
+          id: blinds_fill_highlight
+          y: 65
+          height: !lambda |-
+            return (int) roundf((id(current_blinds_percent) / 100.0f) * 315.0f);
+      - lvgl.label.update:
+          id: blinds_value
+          text: !lambda |-
+            char buf[8];
+            snprintf(buf, sizeof(buf), "%d %%", id(current_blinds_percent));
+            return std::string(buf);
+
+  - id: handle_long_press
+    mode: restart
+    then:
+      - delay: 1000ms
+      - if:
+          condition:
+            binary_sensor.is_on: knob_button
+          then:
+            - lambda: "id(long_press_triggered) = true;"
+            - if:
+                condition:
+                  lvgl.page.is_showing: volume_page
+                then:
+                  - lvgl.page.show:
+                      id: brightness_page
+                      animation: FADE_IN
+                      time: 150ms
+                  - lambda: "id(syncing_local) = true;"
+                  - sensor.viewesmart_rotary_encoder.set_value:
+                      id: knob_encoder
+                      value: !lambda "return id(current_brightness_percent);"
+                else:
+                  - if:
+                      condition:
+                        lvgl.page.is_showing: brightness_page
+                      then:
+                        - lvgl.page.show:
+                            id: blinds_page
+                            animation: FADE_IN
+                            time: 150ms
+                        - lambda: "id(syncing_local) = true;"
+                        - sensor.viewesmart_rotary_encoder.set_value:
+                            id: knob_encoder
+                            value: !lambda "return id(current_blinds_percent);"
+                      else:
+                        - lvgl.page.show:
+                            id: volume_page
+                            animation: FADE_IN
+                            time: 150ms
+                        - lambda: "id(syncing_local) = true;"
+                        - sensor.viewesmart_rotary_encoder.set_value:
+                            id: knob_encoder
+                            value: !lambda "return id(current_volume_percent);"
+
+i2c:
+  sda: GPIO1
+  scl: GPIO3
+  scan: true
+
+spi:
+  id: display_qspi
+  type: quad
+  clk_pin: GPIO10
+  data_pins: [GPIO13, GPIO11, GPIO14, GPIO9]
+
+display:
+  - platform: mipi_spi
+    id: round_display
+    model: CO5300
+    bus_mode: quad
+    cs_pin: GPIO12
+    reset_pin: GPIO8
+    enable_pin: GPIO17
+    dimensions:
+      width: 466
+      height: 466
+      offset_width: 6
+    update_interval: never
+    auto_clear_enabled: false
+    color_order: rgb
+
+sensor:
+  - platform: viewesmart_rotary_encoder
+    id: knob_encoder
+    name: "Knob value"
+    pin_a:
+      number: GPIO5
+      mode:
+        input: true
+        pullup: true
+    pin_b:
+      number: GPIO6
+      mode:
+        input: true
+        pullup: true
+    resolution: 2
+    min_value: 0
+    max_value: 100
+    restore_mode: ALWAYS_ZERO
+    publish_initial_value: true
+
+    on_value:
+      then:
+        - if:
+            condition:
+              lambda: "return id(syncing_local);"
+            then:
+              - lambda: "id(syncing_local) = false;"
+            else:
+              - if:
+                  condition:
+                    lvgl.page.is_showing: brightness_page
+                  then:
+                    - lambda: |-
+                        int v = (int) x;
+                        if (v < 0) v = 0;
+                        if (v > 100) v = 100;
+                        id(current_brightness_percent) = v;
+                    - script.execute: update_brightness_ui
+
+                  else:
+                    - if:
+                        condition:
+                          lvgl.page.is_showing: blinds_page
+                        then:
+                          - lambda: |-
+                              int v = (int) x;
+                              if (v < 0) v = 0;
+                              if (v > 100) v = 100;
+                              id(current_blinds_percent) = v;
+                              id(blinds_open) = (v > 0);
+                          - script.execute: update_blinds_ui
+
+                        else:
+                          - lambda: |-
+                              int v = (int) x;
+                              if (v < 0) v = 0;
+                              if (v > id(max_volume_percent)) v = id(max_volume_percent);
+                              id(current_volume_percent) = v;
+                          - if:
+                              condition:
+                                lambda: "return (int)x > id(max_volume_percent);"
+                              then:
+                                - lambda: "id(syncing_local) = true;"
+                                - sensor.viewesmart_rotary_encoder.set_value:
+                                    id: knob_encoder
+                                    value: !lambda "return id(max_volume_percent);"
+                          - script.execute: update_volume_ui
+
+binary_sensor:
+  - platform: viewesmart_knob_button
+    id: knob_button
+    name: "Knob Button"
+    debounce_time: 15ms
+
+    on_press:
+      then:
+        - lambda: "id(long_press_triggered) = false;"
+        - script.execute: handle_long_press
+
+    on_release:
+      then:
+        - script.stop: handle_long_press
+        - if:
+            condition:
+              lambda: "return !id(long_press_triggered);"
+            then:
+              - if:
+                  condition:
+                    lvgl.page.is_showing: volume_page
+                  then:
+                    - lambda: |-
+                        id(volume_muted) = !id(volume_muted);
+                    - script.execute: update_volume_ui
+                  else:
+                    - if:
+                        condition:
+                          lvgl.page.is_showing: brightness_page
+                        then:
+                          - lambda: |-
+                              id(light_on) = !id(light_on);
+                          - script.execute: update_brightness_ui
+                        else:
+                          - lambda: |-
+                              if (id(blinds_open)) {
+                                id(current_blinds_percent) = 0;
+                                id(blinds_open) = false;
+                              } else {
+                                id(current_blinds_percent) = 100;
+                                id(blinds_open) = true;
+                              }
+                              id(syncing_local) = true;
+                          - sensor.viewesmart_rotary_encoder.set_value:
+                              id: knob_encoder
+                              value: !lambda "return id(current_blinds_percent);"
+                          - script.execute: update_blinds_ui
+
+touchscreen:
+  platform: viewesmart_touchscreen
+  id: board_touch
+  display: round_display
+  update_interval: 16ms
+  on_touch:
+    then:
+      - logger.log:
+          format: "Touch x=%d y=%d"
+          args: ["touch.x", "touch.y"]
+
+lvgl:
+  pages:
+    - id: volume_page
+      widgets:
+        - obj:
+            x: 0
+            y: 0
+            width: 100%
+            height: 100%
+            bg_color: 0x000000
+            bg_opa: COVER
+            radius: 0
+            pad_all: 0
+            border_width: 0
+
+        - arc:
+            id: volume_arc
+            align: CENTER
+            width: 465
+            height: 465
+            min_value: 0
+            max_value: 100
+            value: 50
+            adjustable: false
+            arc_width: 18
+            arc_rounded: true
+            arc_color: 0x2A2A2A
+            start_angle: 120
+            end_angle: 60
+            indicator:
+              arc_color: 0x585AFF
+              arc_width: 18
+              arc_rounded: true
+            knob:
+              bg_color: 0xD84DFF
+              radius: 20
+              pad_all: 4
+              shadow_width: 24
+              shadow_opa: 60%
+
+        - label:
+            id: volume_title
+            align: CENTER
+            y: 0
+            text: "VOLUME"
+            text_font: montserrat_42
+            text_color: 0xFFFFFF
+
+        - label:
+            id: volume_value
+            align: CENTER
+            y: 200
+            text: "50 %"
+            text_font: montserrat_48
+            text_color: 0xFFFFFF
+
+    - id: brightness_page
+      widgets:
+        - obj:
+            x: 0
+            y: 0
+            width: 100%
+            height: 100%
+            bg_color: 0x000000
+            bg_opa: COVER
+            radius: 0
+            pad_all: 0
+            border_width: 0
+
+        - arc:
+            id: brightness_arc
+            align: CENTER
+            width: 465
+            height: 465
+            min_value: 0
+            max_value: 100
+            value: 50
+            adjustable: false
+            arc_width: 18
+            arc_rounded: true
+            arc_color: 0x2A2A2A
+            start_angle: 120
+            end_angle: 60
+            indicator:
+              arc_color: 0xFFC34D
+              arc_width: 18
+              arc_rounded: true
+            knob:
+              bg_color: 0xFFD36A
+              radius: 20
+              pad_all: 4
+              shadow_width: 24
+              shadow_opa: 60%
+
+        - label:
+            id: brightness_title
+            align: CENTER
+            y: 0
+            text: "BRIGHTNESS"
+            text_font: montserrat_42
+            text_color: 0xFFFFFF
+
+        - label:
+            id: brightness_value
+            align: CENTER
+            y: 200
+            text: "50 %"
+            text_font: montserrat_48
+            text_color: 0xFFFFFF
+
+    - id: blinds_page
+      widgets:
+        - obj:
+            x: 0
+            y: 0
+            width: 100%
+            height: 100%
+            bg_color: 0x000000
+            bg_opa: COVER
+            radius: 0
+            pad_all: 0
+            border_width: 0
+
+        - obj:
+            id: blinds_track
+            x: 83
+            y: 55
+            width: 300
+            height: 335
+            bg_color: 0x9C9C9C
+            bg_opa: COVER
+            radius: 6
+            border_width: 0
+            pad_all: 0
+
+        - obj:
+            id: blinds_inner_frame
+            x: 93
+            y: 65
+            width: 280
+            height: 315
+            bg_color: 0x3A3A3A
+            bg_opa: COVER
+            radius: 3
+            border_width: 0
+            pad_all: 0
+
+        - obj:
+            id: blinds_fill
+            x: 93
+            y: 65
+            width: 280
+            height: 0
+            bg_color: 0x4800FF
+            bg_opa: COVER
+            radius: 3
+            border_width: 0
+            pad_all: 0
+
+        - obj:
+            id: blinds_fill_highlight
+            x: 93
+            y: 65
+            width: 10
+            height: 0
+            bg_color: 0x4800FF
+            bg_opa: 28%
+            radius: 3
+            border_width: 0
+            pad_all: 0
+
+        - label:
+            id: blinds_title
+            align: CENTER
+            y: 0
+            text: "BLINDS"
+            text_font: montserrat_42
+            text_color: 0xFFFFFF
+
+        - label:
+            id: blinds_value
+            align: CENTER
+            y: 200
+            text: "30 %"
+            text_font: montserrat_48
+            text_color: 0xFFFFFF
