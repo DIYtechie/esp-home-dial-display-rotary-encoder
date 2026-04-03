@@ -83,8 +83,8 @@ ota:
     password: "35e0ac0a2eaa808c4119a46f48d5c5f8"
 
 wifi:
-  ssid: "REPLACE_WITH_WIFI_SSID"
-  password: "REPLACE_WITH_WIFI_PASSWORD"
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
   ap:
     ssid: "Dial-Display Fallback Hotspot"
     password: "jU1qHVqTcf8R"
@@ -140,6 +140,26 @@ globals:
     type: bool
     restore_value: no
     initial_value: "true"
+
+  - id: touch_mode_switch_ready
+    type: bool
+    restore_value: no
+    initial_value: "true"
+
+  - id: touch_swipe_armed
+    type: bool
+    restore_value: no
+    initial_value: "false"
+
+  - id: touch_swipe_start_x
+    type: int
+    restore_value: no
+    initial_value: "0"
+
+  - id: touch_swipe_start_y
+    type: int
+    restore_value: no
+    initial_value: "0"
 
 script:
   - id: update_volume_ui
@@ -218,40 +238,57 @@ script:
             binary_sensor.is_on: knob_button
           then:
             - lambda: "id(long_press_triggered) = true;"
+            - script.execute: cycle_mode
+
+  - id: cycle_mode
+    mode: restart
+    then:
+      - if:
+          condition:
+            lvgl.page.is_showing: volume_page
+          then:
+            - lvgl.page.show:
+                id: brightness_page
+                animation: FADE_IN
+                time: 150ms
+            - lambda: "id(syncing_local) = true;"
+            - sensor.viewesmart_rotary_encoder.set_value:
+                id: knob_encoder
+                value: !lambda "return id(current_brightness_percent);"
+          else:
             - if:
                 condition:
-                  lvgl.page.is_showing: volume_page
+                  lvgl.page.is_showing: brightness_page
                 then:
                   - lvgl.page.show:
-                      id: brightness_page
+                      id: blinds_page
                       animation: FADE_IN
                       time: 150ms
                   - lambda: "id(syncing_local) = true;"
                   - sensor.viewesmart_rotary_encoder.set_value:
                       id: knob_encoder
-                      value: !lambda "return id(current_brightness_percent);"
+                      value: !lambda "return id(current_blinds_percent);"
                 else:
-                  - if:
-                      condition:
-                        lvgl.page.is_showing: brightness_page
-                      then:
-                        - lvgl.page.show:
-                            id: blinds_page
-                            animation: FADE_IN
-                            time: 150ms
-                        - lambda: "id(syncing_local) = true;"
-                        - sensor.viewesmart_rotary_encoder.set_value:
-                            id: knob_encoder
-                            value: !lambda "return id(current_blinds_percent);"
-                      else:
-                        - lvgl.page.show:
-                            id: volume_page
-                            animation: FADE_IN
-                            time: 150ms
-                        - lambda: "id(syncing_local) = true;"
-                        - sensor.viewesmart_rotary_encoder.set_value:
-                            id: knob_encoder
-                            value: !lambda "return id(current_volume_percent);"
+                  - lvgl.page.show:
+                      id: volume_page
+                      animation: FADE_IN
+                      time: 150ms
+                  - lambda: "id(syncing_local) = true;"
+                  - sensor.viewesmart_rotary_encoder.set_value:
+                      id: knob_encoder
+                      value: !lambda "return id(current_volume_percent);"
+
+  - id: rearm_touch_mode_switch
+    mode: restart
+    then:
+      - delay: 350ms
+      - lambda: "id(touch_mode_switch_ready) = true;"
+
+  - id: clear_touch_swipe_arm
+    mode: restart
+    then:
+      - delay: 700ms
+      - lambda: "id(touch_swipe_armed) = false;"
 
 i2c:
   sda: GPIO1
@@ -406,6 +443,32 @@ touchscreen:
       - logger.log:
           format: "Touch x=%d y=%d"
           args: ["touch.x", "touch.y"]
+      - if:
+          condition:
+            lambda: |-
+              return id(touch_mode_switch_ready) && !id(touch_swipe_armed) &&
+                     touch.x >= 160 && touch.x <= 306 && touch.y >= 160 && touch.y <= 306;
+          then:
+            - lambda: |-
+                id(touch_swipe_armed) = true;
+                id(touch_swipe_start_x) = touch.x;
+                id(touch_swipe_start_y) = touch.y;
+            - script.execute: clear_touch_swipe_arm
+      - if:
+          condition:
+            lambda: |-
+              if (!id(touch_mode_switch_ready) || !id(touch_swipe_armed)) {
+                return false;
+              }
+              const int dx = touch.x - id(touch_swipe_start_x);
+              const int dy = touch.y - id(touch_swipe_start_y);
+              return (dx * dx + dy * dy) >= (55 * 55);
+          then:
+            - lambda: |-
+                id(touch_mode_switch_ready) = false;
+                id(touch_swipe_armed) = false;
+            - script.execute: cycle_mode
+            - script.execute: rearm_touch_mode_switch
 
 lvgl:
   pages:

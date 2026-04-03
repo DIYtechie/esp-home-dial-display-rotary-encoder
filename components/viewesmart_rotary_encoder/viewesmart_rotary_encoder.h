@@ -1,6 +1,5 @@
 #pragma once
 
-#include <array>
 #include <cinttypes>
 #include <cstdint>
 
@@ -24,8 +23,6 @@ enum VieweSmartRotaryEncoderResolution {
 };
 
 struct VieweSmartRotaryEncoderStore {
-  static constexpr size_t EVENT_QUEUE_SIZE = 128;
-
   ISRInternalGPIOPin pin_a;
   ISRInternalGPIOPin pin_b;
 
@@ -33,10 +30,8 @@ struct VieweSmartRotaryEncoderStore {
   uint8_t state{0};
   bool first_read{true};
 
-  std::array<int8_t, EVENT_QUEUE_SIZE> events{};
-  volatile uint16_t head{0};
-  volatile uint16_t tail{0};
-  volatile uint32_t overflow_count{0};
+  volatile int32_t pending_delta{0};
+  volatile uint32_t saturation_count{0};
   volatile uint32_t invalid_transition_count{0};
 
   static void gpio_intr(VieweSmartRotaryEncoderStore *arg);
@@ -70,7 +65,7 @@ class VieweSmartRotaryEncoderSensor : public sensor::Sensor, public Component {
   template<typename F> void register_listener(F &&listener) { this->listeners_.add(std::forward<F>(listener)); }
 
  protected:
-  bool pop_event_(int8_t *event);
+  int32_t consume_pending_delta_();
   void clear_pending_events_();
   void publish_value_(bool force = false);
 
@@ -88,7 +83,7 @@ class VieweSmartRotaryEncoderSensor : public sensor::Sensor, public Component {
   int32_t min_value_{INT32_MIN};
   int32_t max_value_{INT32_MAX};
 
-  uint32_t last_reported_overflow_count_{0};
+  uint32_t last_reported_saturation_count_{0};
   uint32_t last_reported_invalid_transition_count_{0};
 
   VieweSmartRotaryEncoderStore store_{};

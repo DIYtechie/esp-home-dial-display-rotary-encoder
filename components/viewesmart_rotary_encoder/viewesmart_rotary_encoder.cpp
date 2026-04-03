@@ -72,12 +72,18 @@ void IRAM_ATTR HOT VieweSmartRotaryEncoderStore::gpio_intr(VieweSmartRotaryEncod
   }
 
   if (rotation_dir != 0 && !arg->first_read) {
-    const uint16_t next_head = (arg->head + 1U) % VieweSmartRotaryEncoderStore::EVENT_QUEUE_SIZE;
-    if (next_head == arg->tail) {
-      arg->overflow_count++;
+    if (rotation_dir > 0) {
+      if (arg->pending_delta != INT32_MAX) {
+        arg->pending_delta++;
+      } else {
+        arg->saturation_count++;
+      }
     } else {
-      arg->events[arg->head] = rotation_dir;
-      arg->head = next_head;
+      if (arg->pending_delta != INT32_MIN) {
+        arg->pending_delta--;
+      } else {
+        arg->saturation_count++;
+      }
     }
   }
 
@@ -125,7 +131,7 @@ void VieweSmartRotaryEncoderSensor::dump_config() {
   LOG_PIN("  Pin A: ", this->pin_a_);
   LOG_PIN("  Pin B: ", this->pin_b_);
   LOG_PIN("  Reset Pin: ", this->pin_reset_);
-  ESP_LOGCONFIG(TAG, "  Event Queue Size: %u", VieweSmartRotaryEncoderStore::EVENT_QUEUE_SIZE);
+  ESP_LOGCONFIG(TAG, "  ISR Aggregation: enabled");
   ESP_LOGCONFIG(TAG, "  Min Value: %" PRId32, this->min_value_);
   ESP_LOGCONFIG(TAG, "  Max Value: %" PRId32, this->max_value_);
 
@@ -156,16 +162,19 @@ void VieweSmartRotaryEncoderSensor::loop() {
     this->set_value(0);
   }
 
-  int8_t event = 0;
+  const int32_t delta = this->consume_pending_delta_();
   bool changed = false;
-  while (this->pop_event_(&event)) {
+  if (delta != 0) {
     changed = true;
-    if (event > 0) {
-      this->value_ = clamp(this->value_ + 1, this->min_value_, this->max_value_);
-      this->on_clockwise_callback_.call();
-    } else {
-      this->value_ = clamp(this->value_ - 1, this->min_value_, this->max_value_);
-      this->on_anticlockwise_callback_.call();
+    const int32_t steps = delta > 0 ? delta : -delta;
+    for (int32_t i = 0; i < steps; i++) {
+      if (delta > 0) {
+        this->value_ = clamp(this->value_ + 1, this->min_value_, this->max_value_);
+        this->on_clockwise_callback_.call();
+      } else {
+        this->value_ = clamp(this->value_ - 1, this->min_value_, this->max_value_);
+        this->on_anticlockwise_callback_.call();
+      }
     }
   }
 
@@ -175,10 +184,10 @@ void VieweSmartRotaryEncoderSensor::loop() {
     this->publish_initial_value_ = false;
   }
 
-  if (this->last_reported_overflow_count_ != this->store_.overflow_count) {
-    const uint32_t delta = this->store_.overflow_count - this->last_reported_overflow_count_;
-    this->last_reported_overflow_count_ = this->store_.overflow_count;
-    ESP_LOGW(TAG, "Dropped %u queued rotary events because the ISR queue filled up", delta);
+  if (this->last_reported_saturation_count_ != this->store_.saturation_count) {
+    const uint32_t delta_saturated = this->store_.saturation_count - this->last_reported_saturation_count_;
+    this->last_reported_saturation_count_ = this->store_.saturation_count;
+    ESP_LOGW(TAG, "Dropped %u rotary steps because the ISR accumulator saturated", delta_saturated);
   }
   if (this->last_reported_invalid_transition_count_ != this->store_.invalid_transition_count) {
     const uint32_t delta = this->store_.invalid_transition_count - this->last_reported_invalid_transition_count_;
@@ -195,20 +204,16 @@ void VieweSmartRotaryEncoderSensor::set_value(int value) {
   this->pending_publish_ = true;
 }
 
-bool VieweSmartRotaryEncoderSensor::pop_event_(int8_t *event) {
+int32_t VieweSmartRotaryEncoderSensor::consume_pending_delta_() {
   InterruptLock lock;
-  if (this->store_.tail == this->store_.head) {
-    return false;
-  }
-  *event = this->store_.events[this->store_.tail];
-  this->store_.tail = (this->store_.tail + 1U) % VieweSmartRotaryEncoderStore::EVENT_QUEUE_SIZE;
-  return true;
+  const int32_t delta = this->store_.pending_delta;
+  this->store_.pending_delta = 0;
+  return delta;
 }
 
 void VieweSmartRotaryEncoderSensor::clear_pending_events_() {
   InterruptLock lock;
-  this->store_.head = 0;
-  this->store_.tail = 0;
+  this->store_.pending_delta = 0;
 }
 
 void VieweSmartRotaryEncoderSensor::publish_value_(bool force) {
@@ -225,4 +230,3 @@ void VieweSmartRotaryEncoderSensor::publish_value_(bool force) {
 
 }  // namespace viewesmart_rotary_encoder
 }  // namespace esphome
-
