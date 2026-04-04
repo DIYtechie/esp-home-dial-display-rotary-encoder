@@ -236,8 +236,7 @@ void VieweSmartRotaryEncoderSensor::loop() {
       }
 
       if (this->pending_direction_confirmation_count_ < required_confirmation_count ||
-          this->pending_direction_confirmation_magnitude_ < required_confirmation_magnitude ||
-          pending_step_magnitude < 2) {
+          this->pending_direction_confirmation_magnitude_ < required_confirmation_magnitude) {
         if (DIAGNOSTIC_DECODER_MODE) {
           ESP_LOGD(TAG,
                    "reject reverse pending=%" PRId32 " dir=%" PRId32 " last_dir=%" PRId8
