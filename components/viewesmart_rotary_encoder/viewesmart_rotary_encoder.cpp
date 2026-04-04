@@ -25,7 +25,7 @@ static const int32_t SLOW_MEDIUM_VALUE_STEP = 1;
 static const int32_t SLOW_VALUE_STEP = 1;
 static const uint8_t NORMAL_REVERSE_CONFIRMATION_COUNT = 2;
 static const uint8_t HIGH_SPEED_REVERSE_CONFIRMATION_COUNT = 3;
-static const int32_t NORMAL_REVERSE_CONFIRMATION_MAGNITUDE = 3;
+static const int32_t NORMAL_REVERSE_CONFIRMATION_MAGNITUDE = 2;
 static const int32_t HIGH_SPEED_REVERSE_CONFIRMATION_MAGNITUDE = 4;
 
 enum PollState : uint8_t {
