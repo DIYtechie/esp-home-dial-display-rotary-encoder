@@ -13,8 +13,8 @@ static const uint32_t DIRECTION_CONFIRMATION_WINDOW_MS = 180;
 static const uint32_t SLOW_REVERSE_ACCEPT_MS = 120;
 static const uint32_t FAST_SPEED_THRESHOLD_MS = 50;
 static const uint32_t MEDIUM_SPEED_THRESHOLD_MS = 150;
-static const int32_t FAST_VALUE_STEP = 4;
-static const int32_t MEDIUM_VALUE_STEP = 2;
+static const int32_t FAST_VALUE_STEP = 7;
+static const int32_t MEDIUM_VALUE_STEP = 4;
 static const int32_t SLOW_VALUE_STEP = 1;
 
 #ifdef USE_ESP_IDF
@@ -207,9 +207,9 @@ void VieweSmartRotaryEncoderSensor::loop() {
 
     int32_t value_step_size = SLOW_VALUE_STEP;
     if (!direction_changed) {
-      if (time_since_value_change <= FAST_SPEED_THRESHOLD_MS) {
+      if (pending_step_magnitude >= 4 || time_since_value_change <= FAST_SPEED_THRESHOLD_MS) {
         value_step_size = FAST_VALUE_STEP;
-      } else if (time_since_value_change <= MEDIUM_SPEED_THRESHOLD_MS) {
+      } else if (pending_step_magnitude >= 2 || time_since_value_change <= MEDIUM_SPEED_THRESHOLD_MS) {
         value_step_size = MEDIUM_VALUE_STEP;
       }
     }
