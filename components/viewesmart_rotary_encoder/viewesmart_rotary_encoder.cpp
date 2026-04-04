@@ -11,10 +11,14 @@ static const uint32_t STEP_PUBLISH_INTERVAL_MS = 10;
 static const uint32_t FAST_STEP_PUBLISH_INTERVAL_MS = 5;
 static const uint32_t DIRECTION_CONFIRMATION_WINDOW_MS = 180;
 static const uint32_t SLOW_REVERSE_ACCEPT_MS = 120;
-static const uint32_t FAST_SPEED_THRESHOLD_MS = 50;
-static const uint32_t MEDIUM_SPEED_THRESHOLD_MS = 150;
-static const int32_t FAST_VALUE_STEP = 10;
-static const int32_t MEDIUM_VALUE_STEP = 5;
+static const uint32_t FASTEST_SPEED_THRESHOLD_MS = 35;
+static const uint32_t FAST_SPEED_THRESHOLD_MS = 60;
+static const uint32_t MEDIUM_SPEED_THRESHOLD_MS = 90;
+static const uint32_t SLOW_MEDIUM_SPEED_THRESHOLD_MS = 150;
+static const int32_t FASTEST_VALUE_STEP = 10;
+static const int32_t FAST_VALUE_STEP = 7;
+static const int32_t MEDIUM_VALUE_STEP = 4;
+static const int32_t SLOW_MEDIUM_VALUE_STEP = 2;
 static const int32_t SLOW_VALUE_STEP = 1;
 static const uint8_t NORMAL_REVERSE_CONFIRMATION_COUNT = 2;
 static const uint8_t HIGH_SPEED_REVERSE_CONFIRMATION_COUNT = 3;
@@ -115,10 +119,13 @@ void VieweSmartRotaryEncoderSensor::dump_config() {
   ESP_LOGCONFIG(TAG, "  Fast Step Publish Interval: %" PRIu32 " ms", FAST_STEP_PUBLISH_INTERVAL_MS);
   ESP_LOGCONFIG(TAG, "  Reverse Direction Confirmation: %" PRIu32 " ms", DIRECTION_CONFIRMATION_WINDOW_MS);
   ESP_LOGCONFIG(TAG, "  Slow Reverse Accept: %" PRIu32 " ms", SLOW_REVERSE_ACCEPT_MS);
-  ESP_LOGCONFIG(TAG, "  Fast Speed Threshold: %" PRIu32 " ms", FAST_SPEED_THRESHOLD_MS);
-  ESP_LOGCONFIG(TAG, "  Medium Speed Threshold: %" PRIu32 " ms", MEDIUM_SPEED_THRESHOLD_MS);
-  ESP_LOGCONFIG(TAG, "  Step Sizes: slow=%" PRId32 ", medium=%" PRId32 ", fast=%" PRId32, SLOW_VALUE_STEP,
-                MEDIUM_VALUE_STEP, FAST_VALUE_STEP);
+  ESP_LOGCONFIG(TAG, "  Speed Thresholds: slow_medium=%" PRIu32 ", medium=%" PRIu32 ", fast=%" PRIu32
+                     ", fastest=%" PRIu32 " ms",
+                SLOW_MEDIUM_SPEED_THRESHOLD_MS, MEDIUM_SPEED_THRESHOLD_MS, FAST_SPEED_THRESHOLD_MS,
+                FASTEST_SPEED_THRESHOLD_MS);
+  ESP_LOGCONFIG(TAG, "  Step Sizes: slow=%" PRId32 ", slow_medium=%" PRId32 ", medium=%" PRId32 ", fast=%" PRId32
+                     ", fastest=%" PRId32,
+                SLOW_VALUE_STEP, SLOW_MEDIUM_VALUE_STEP, MEDIUM_VALUE_STEP, FAST_VALUE_STEP, FASTEST_VALUE_STEP);
   ESP_LOGCONFIG(TAG, "  Reverse Confirmation Count: normal=%u, high_speed=%u",
                 NORMAL_REVERSE_CONFIRMATION_COUNT, HIGH_SPEED_REVERSE_CONFIRMATION_COUNT);
   ESP_LOGCONFIG(TAG, "  Min Value: %" PRId32, this->min_value_);
@@ -193,7 +200,8 @@ void VieweSmartRotaryEncoderSensor::loop() {
       time_since_value_change = now - this->last_value_change_ms_;
     }
 
-    const bool high_speed_context = time_since_value_change <= FAST_SPEED_THRESHOLD_MS || pending_step_magnitude >= 4;
+    const bool high_speed_context =
+        time_since_value_change <= FAST_SPEED_THRESHOLD_MS || pending_step_magnitude >= 4;
     const bool bypass_direction_confirmation = leaving_bound;
     const bool slow_reverse_accept =
         direction_changed && pending_step_magnitude == 1 && !high_speed_context &&
@@ -222,10 +230,14 @@ void VieweSmartRotaryEncoderSensor::loop() {
 
     int32_t value_step_size = SLOW_VALUE_STEP;
     if (!direction_changed) {
-      if (pending_step_magnitude >= 4 || time_since_value_change <= FAST_SPEED_THRESHOLD_MS) {
+      if (pending_step_magnitude >= 5 || time_since_value_change <= FASTEST_SPEED_THRESHOLD_MS) {
+        value_step_size = FASTEST_VALUE_STEP;
+      } else if (pending_step_magnitude >= 4 || time_since_value_change <= FAST_SPEED_THRESHOLD_MS) {
         value_step_size = FAST_VALUE_STEP;
-      } else if (pending_step_magnitude >= 2 || time_since_value_change <= MEDIUM_SPEED_THRESHOLD_MS) {
+      } else if (pending_step_magnitude >= 3 || time_since_value_change <= MEDIUM_SPEED_THRESHOLD_MS) {
         value_step_size = MEDIUM_VALUE_STEP;
+      } else if (pending_step_magnitude >= 2 || time_since_value_change <= SLOW_MEDIUM_SPEED_THRESHOLD_MS) {
+        value_step_size = SLOW_MEDIUM_VALUE_STEP;
       }
     }
 
