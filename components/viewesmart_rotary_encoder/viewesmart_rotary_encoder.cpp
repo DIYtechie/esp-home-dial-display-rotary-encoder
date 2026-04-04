@@ -24,9 +24,9 @@ static const int32_t MEDIUM_VALUE_STEP = 5;
 static const int32_t SLOW_MEDIUM_VALUE_STEP = 3;
 static const int32_t SLOW_VALUE_STEP = 1;
 static const uint8_t NORMAL_REVERSE_CONFIRMATION_COUNT = 2;
-static const uint8_t HIGH_SPEED_REVERSE_CONFIRMATION_COUNT = 3;
+static const uint8_t HIGH_SPEED_REVERSE_CONFIRMATION_COUNT = 4;
 static const int32_t NORMAL_REVERSE_CONFIRMATION_MAGNITUDE = 2;
-static const int32_t HIGH_SPEED_REVERSE_CONFIRMATION_MAGNITUDE = 4;
+static const int32_t HIGH_SPEED_REVERSE_CONFIRMATION_MAGNITUDE = 6;
 
 enum PollState : uint8_t {
   POLL_STATE_CHECK = 0,
@@ -174,8 +174,7 @@ void VieweSmartRotaryEncoderSensor::loop() {
       time_since_value_change = now - this->last_value_change_ms_;
     }
 
-    const bool high_speed_context =
-        time_since_value_change <= FAST_SPEED_THRESHOLD_MS || pending_step_magnitude >= 4;
+    const bool high_speed_context = time_since_value_change <= FAST_SPEED_THRESHOLD_MS;
     const bool bypass_direction_confirmation = leaving_bound;
 
     if (direction_changed && !bypass_direction_confirmation) {
