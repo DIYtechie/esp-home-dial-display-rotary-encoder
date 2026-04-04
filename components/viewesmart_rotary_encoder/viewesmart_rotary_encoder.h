@@ -3,6 +3,10 @@
 #include <cinttypes>
 #include <cstdint>
 
+#ifdef USE_ESP_IDF
+#include <driver/pcnt.h>
+#endif
+
 #include "esphome/components/sensor/sensor.h"
 #include "esphome/core/automation.h"
 #include "esphome/core/component.h"
@@ -22,28 +26,13 @@ enum VieweSmartRotaryEncoderResolution {
   VIEWESMART_ROTARY_ENCODER_4_PULSES_PER_CYCLE = 0x1100,
 };
 
-struct VieweSmartRotaryEncoderStore {
-  ISRInternalGPIOPin pin_a;
-  ISRInternalGPIOPin pin_b;
-
-  VieweSmartRotaryEncoderResolution resolution{VIEWESMART_ROTARY_ENCODER_1_PULSE_PER_CYCLE};
-  uint8_t state{0};
-  bool first_read{true};
-
-  volatile int32_t pending_delta{0};
-  volatile uint32_t saturation_count{0};
-  volatile uint32_t invalid_transition_count{0};
-
-  static void gpio_intr(VieweSmartRotaryEncoderStore *arg);
-};
-
 class VieweSmartRotaryEncoderSensor : public sensor::Sensor, public Component {
  public:
   void set_pin_a(InternalGPIOPin *pin_a) { this->pin_a_ = pin_a; }
   void set_pin_b(InternalGPIOPin *pin_b) { this->pin_b_ = pin_b; }
   void set_reset_pin(InternalGPIOPin *pin_reset) { this->pin_reset_ = pin_reset; }
   void set_restore_mode(VieweSmartRotaryEncoderRestoreMode restore_mode) { this->restore_mode_ = restore_mode; }
-  void set_resolution(VieweSmartRotaryEncoderResolution resolution) { this->store_.resolution = resolution; }
+  void set_resolution(VieweSmartRotaryEncoderResolution resolution) { this->resolution_ = resolution; }
   void set_min_value(int32_t min_value) { this->min_value_ = min_value; }
   void set_max_value(int32_t max_value) { this->max_value_ = max_value; }
   void set_publish_initial_value(bool publish_initial_value) { this->publish_initial_value_ = publish_initial_value; }
@@ -65,8 +54,7 @@ class VieweSmartRotaryEncoderSensor : public sensor::Sensor, public Component {
   template<typename F> void register_listener(F &&listener) { this->listeners_.add(std::forward<F>(listener)); }
 
  protected:
-  int32_t consume_pending_delta_();
-  void clear_pending_events_();
+  int resolution_divider_() const;
   void publish_value_(bool force = false);
 
   InternalGPIOPin *pin_a_{nullptr};
@@ -82,11 +70,15 @@ class VieweSmartRotaryEncoderSensor : public sensor::Sensor, public Component {
   int32_t last_published_{0};
   int32_t min_value_{INT32_MIN};
   int32_t max_value_{INT32_MAX};
+  int32_t raw_count_total_{0};
+  int32_t last_reported_step_count_{0};
 
-  uint32_t last_reported_saturation_count_{0};
-  uint32_t last_reported_invalid_transition_count_{0};
+  VieweSmartRotaryEncoderResolution resolution_{VIEWESMART_ROTARY_ENCODER_1_PULSE_PER_CYCLE};
 
-  VieweSmartRotaryEncoderStore store_{};
+#ifdef USE_ESP_IDF
+  pcnt_unit_t pcnt_unit_{PCNT_UNIT_0};
+  bool pcnt_initialized_{false};
+#endif
 
   CallbackManager<void()> on_clockwise_callback_{};
   CallbackManager<void()> on_anticlockwise_callback_{};
