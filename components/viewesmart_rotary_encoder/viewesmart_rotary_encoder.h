@@ -3,6 +3,10 @@
 #include <cinttypes>
 #include <cstdint>
 
+#ifdef USE_ESP_IDF
+#include <driver/pcnt.h>
+#endif
+
 #include "esphome/components/sensor/sensor.h"
 #include "esphome/core/automation.h"
 #include "esphome/core/component.h"
@@ -20,13 +24,6 @@ enum VieweSmartRotaryEncoderResolution {
   VIEWESMART_ROTARY_ENCODER_1_PULSE_PER_CYCLE = 0x4400,
   VIEWESMART_ROTARY_ENCODER_2_PULSES_PER_CYCLE = 0x2200,
   VIEWESMART_ROTARY_ENCODER_4_PULSES_PER_CYCLE = 0x1100,
-};
-
-enum VieweSmartRotaryEncoderState {
-  VIEWESMART_ROTARY_ENCODER_CHECK = -1,
-  VIEWESMART_ROTARY_ENCODER_READY = 0,
-  VIEWESMART_ROTARY_ENCODER_PHASE_A,
-  VIEWESMART_ROTARY_ENCODER_PHASE_B,
 };
 
 class VieweSmartRotaryEncoderSensor : public sensor::Sensor, public Component {
@@ -59,9 +56,7 @@ class VieweSmartRotaryEncoderSensor : public sensor::Sensor, public Component {
  protected:
   int resolution_divider_() const;
   void publish_value_(bool force = false);
-  void poll_encoder_();
-  void process_state_machine_(bool a_changed, bool b_changed);
-  void record_event_(int8_t direction);
+  int32_t poll_encoder_delta_();
 
   InternalGPIOPin *pin_a_{nullptr};
   InternalGPIOPin *pin_b_{nullptr};
@@ -79,22 +74,28 @@ class VieweSmartRotaryEncoderSensor : public sensor::Sensor, public Component {
   int32_t raw_count_total_{0};
   int32_t last_reported_step_count_{0};
   int32_t pending_step_delta_{0};
-  uint32_t last_poll_ms_{0};
   uint32_t last_step_publish_ms_{0};
   uint32_t last_value_change_ms_{0};
   int8_t last_emitted_direction_{0};
   int8_t pending_direction_confirmation_{0};
   uint8_t pending_direction_confirmation_count_{0};
+  int32_t pending_direction_confirmation_magnitude_{0};
   uint32_t pending_direction_confirmation_ms_{0};
-  VieweSmartRotaryEncoderState state_{VIEWESMART_ROTARY_ENCODER_CHECK};
+  uint32_t last_poll_ms_{0};
   uint8_t debounce_a_count_{0};
   uint8_t debounce_b_count_{0};
   bool encoder_a_change_{false};
   bool encoder_b_change_{false};
   bool encoder_a_level_{false};
   bool encoder_b_level_{false};
+  uint8_t poll_state_{0};
 
   VieweSmartRotaryEncoderResolution resolution_{VIEWESMART_ROTARY_ENCODER_1_PULSE_PER_CYCLE};
+
+#ifdef USE_ESP_IDF
+  pcnt_unit_t pcnt_unit_{PCNT_UNIT_0};
+  bool pcnt_initialized_{false};
+#endif
 
   CallbackManager<void()> on_clockwise_callback_{};
   CallbackManager<void()> on_anticlockwise_callback_{};
