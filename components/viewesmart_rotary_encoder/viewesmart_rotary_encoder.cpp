@@ -7,7 +7,7 @@ namespace esphome {
 namespace viewesmart_rotary_encoder {
 
 static const char *const TAG = "viewesmart_rotary";
-static const uint32_t STEP_PUBLISH_INTERVAL_MS = 20;
+static const uint32_t STEP_PUBLISH_INTERVAL_MS = 10;
 
 #ifdef USE_ESP_IDF
 static pcnt_unit_t next_pcnt_unit() {
@@ -153,7 +153,7 @@ void VieweSmartRotaryEncoderSensor::loop() {
   bool changed = false;
 
   if (delta_steps != 0) {
-    this->pending_step_delta_ += delta_steps;
+    this->pending_step_delta_ = delta_steps;
     this->last_reported_step_count_ = current_step_count;
   }
 
@@ -172,7 +172,7 @@ void VieweSmartRotaryEncoderSensor::loop() {
       changed = true;
     }
 
-    this->pending_step_delta_ -= direction;
+    this->pending_step_delta_ = 0;
     this->last_step_publish_ms_ = now;
   }
 
