@@ -13,8 +13,8 @@ static const uint32_t DIRECTION_CONFIRMATION_WINDOW_MS = 180;
 static const uint32_t SLOW_REVERSE_ACCEPT_MS = 120;
 static const uint32_t FAST_SPEED_THRESHOLD_MS = 50;
 static const uint32_t MEDIUM_SPEED_THRESHOLD_MS = 150;
-static const int32_t FAST_VALUE_STEP = 7;
-static const int32_t MEDIUM_VALUE_STEP = 4;
+static const int32_t FAST_VALUE_STEP = 10;
+static const int32_t MEDIUM_VALUE_STEP = 5;
 static const int32_t SLOW_VALUE_STEP = 1;
 
 #ifdef USE_ESP_IDF
