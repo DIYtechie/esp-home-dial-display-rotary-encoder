@@ -8,88 +8,30 @@ namespace viewesmart_rotary_encoder {
 
 static const char *const TAG = "viewesmart_rotary";
 
-static const uint8_t STATE_LUT_MASK = 0x1C;
-static const uint16_t STATE_PIN_A_HIGH = 0x01;
-static const uint16_t STATE_PIN_B_HIGH = 0x02;
-static const uint16_t STATE_S0 = 0x00;
-static const uint16_t STATE_S1 = 0x04;
-static const uint16_t STATE_S2 = 0x08;
-static const uint16_t STATE_S3 = 0x0C;
-static const uint16_t STATE_CCW = 0x00;
-static const uint16_t STATE_CW = 0x10;
-static const uint16_t STATE_HAS_INCREMENTED = 0x0700;
-static const uint16_t STATE_INCREMENT_COUNTER_4 = 0x0700;
-static const uint16_t STATE_INCREMENT_COUNTER_2 = 0x0300;
-static const uint16_t STATE_INCREMENT_COUNTER_1 = 0x0100;
-static const uint16_t STATE_HAS_DECREMENTED = 0x7000;
-static const uint16_t STATE_DECREMENT_COUNTER_4 = 0x7000;
-static const uint16_t STATE_DECREMENT_COUNTER_2 = 0x3000;
-static const uint16_t STATE_DECREMENT_COUNTER_1 = 0x1000;
-
-#ifndef DRAM_ATTR
-#define DRAM_ATTR
-#endif
-
-static const uint16_t DRAM_ATTR STATE_LOOKUP_TABLE[32] = {
-    STATE_CCW | STATE_S0, STATE_CW | STATE_S1 | STATE_INCREMENT_COUNTER_1, STATE_CCW | STATE_S0,
-    STATE_CCW | STATE_S3 | STATE_DECREMENT_COUNTER_4, STATE_CCW | STATE_S1, STATE_CCW | STATE_S1,
-    STATE_CCW | STATE_S0 | STATE_DECREMENT_COUNTER_1, STATE_CW | STATE_S2 | STATE_INCREMENT_COUNTER_4,
-    STATE_CCW | STATE_S1 | STATE_DECREMENT_COUNTER_2, STATE_CCW | STATE_S2,
-    STATE_CW | STATE_S3 | STATE_INCREMENT_COUNTER_1, STATE_CCW | STATE_S2,
-    STATE_CW | STATE_S0 | STATE_INCREMENT_COUNTER_2, STATE_CCW | STATE_S2 | STATE_DECREMENT_COUNTER_1,
-    STATE_CCW | STATE_S3, STATE_CCW | STATE_S3, STATE_CW | STATE_S0,
-    STATE_CW | STATE_S1 | STATE_INCREMENT_COUNTER_1, STATE_CW | STATE_S0,
-    STATE_CCW | STATE_S3 | STATE_DECREMENT_COUNTER_4, STATE_CW | STATE_S1, STATE_CW | STATE_S1,
-    STATE_CCW | STATE_S0 | STATE_DECREMENT_COUNTER_1, STATE_CW | STATE_S2 | STATE_INCREMENT_COUNTER_4,
-    STATE_CCW | STATE_S1 | STATE_DECREMENT_COUNTER_2, STATE_CW | STATE_S2,
-    STATE_CW | STATE_S3 | STATE_INCREMENT_COUNTER_1, STATE_CW | STATE_S2,
-    STATE_CW | STATE_S0 | STATE_INCREMENT_COUNTER_2, STATE_CCW | STATE_S2 | STATE_DECREMENT_COUNTER_1,
-    STATE_CW | STATE_S3, STATE_CW | STATE_S3,
-};
-
-void IRAM_ATTR HOT VieweSmartRotaryEncoderStore::gpio_intr(VieweSmartRotaryEncoderStore *arg) {
-  uint8_t input_state = arg->state & STATE_LUT_MASK;
-  if (arg->pin_a.digital_read()) {
-    input_state |= STATE_PIN_A_HIGH;
-  }
-  if (arg->pin_b.digital_read()) {
-    input_state |= STATE_PIN_B_HIGH;
-  }
-
-  const uint8_t previous_pins = arg->state & (STATE_PIN_A_HIGH | STATE_PIN_B_HIGH);
-  const uint8_t changed_pins = previous_pins ^ (input_state & (STATE_PIN_A_HIGH | STATE_PIN_B_HIGH));
-  if (changed_pins == (STATE_PIN_A_HIGH | STATE_PIN_B_HIGH)) {
-    arg->invalid_transition_count++;
-  }
-
-  const uint16_t new_state = STATE_LOOKUP_TABLE[input_state];
-  int8_t rotation_dir = 0;
-  if ((new_state & arg->resolution & STATE_HAS_INCREMENTED) != 0) {
-    rotation_dir = 1;
-  }
-  if ((new_state & arg->resolution & STATE_HAS_DECREMENTED) != 0) {
-    rotation_dir = -1;
-  }
-
-  if (rotation_dir != 0 && !arg->first_read) {
-    if (rotation_dir > 0) {
-      if (arg->pending_delta != INT32_MAX) {
-        arg->pending_delta++;
-      } else {
-        arg->saturation_count++;
-      }
-    } else {
-      if (arg->pending_delta != INT32_MIN) {
-        arg->pending_delta--;
-      } else {
-        arg->saturation_count++;
-      }
-    }
-  }
-
-  arg->first_read = false;
-  arg->state = new_state;
+#ifdef USE_ESP_IDF
+static pcnt_unit_t next_pcnt_unit() {
+  static int unit_index = 0;
+  const pcnt_unit_t unit = static_cast<pcnt_unit_t>(unit_index);
+  unit_index = (unit_index + 1) % SOC_PCNT_UNITS_PER_GROUP;
+  return unit;
 }
+
+static bool configure_pcnt_channel(pcnt_unit_t unit, pcnt_channel_t channel, int pulse_gpio, int ctrl_gpio,
+                                   pcnt_count_mode_t pos_mode, pcnt_count_mode_t neg_mode) {
+  pcnt_config_t config{};
+  config.pulse_gpio_num = pulse_gpio;
+  config.ctrl_gpio_num = ctrl_gpio;
+  config.lctrl_mode = PCNT_MODE_REVERSE;
+  config.hctrl_mode = PCNT_MODE_KEEP;
+  config.pos_mode = pos_mode;
+  config.neg_mode = neg_mode;
+  config.counter_h_lim = INT16_MAX;
+  config.counter_l_lim = INT16_MIN;
+  config.unit = unit;
+  config.channel = channel;
+  return pcnt_unit_config(&config) == ESP_OK;
+}
+#endif
 
 void VieweSmartRotaryEncoderSensor::setup() {
   int32_t initial_value = 0;
@@ -110,15 +52,38 @@ void VieweSmartRotaryEncoderSensor::setup() {
 
   this->pin_a_->setup();
   this->pin_b_->setup();
-  this->store_.pin_a = this->pin_a_->to_isr();
-  this->store_.pin_b = this->pin_b_->to_isr();
 
   if (this->pin_reset_ != nullptr) {
     this->pin_reset_->setup();
   }
 
-  this->pin_a_->attach_interrupt(VieweSmartRotaryEncoderStore::gpio_intr, &this->store_, gpio::INTERRUPT_ANY_EDGE);
-  this->pin_b_->attach_interrupt(VieweSmartRotaryEncoderStore::gpio_intr, &this->store_, gpio::INTERRUPT_ANY_EDGE);
+#ifdef USE_ESP_IDF
+  this->pcnt_unit_ = next_pcnt_unit();
+
+  const bool first_channel_ok =
+      configure_pcnt_channel(this->pcnt_unit_, PCNT_CHANNEL_0, this->pin_a_->get_pin(), this->pin_b_->get_pin(),
+                             PCNT_COUNT_INC, PCNT_COUNT_DEC);
+  const bool second_channel_ok =
+      configure_pcnt_channel(this->pcnt_unit_, PCNT_CHANNEL_1, this->pin_b_->get_pin(), this->pin_a_->get_pin(),
+                             PCNT_COUNT_DEC, PCNT_COUNT_INC);
+
+  if (!first_channel_ok || !second_channel_ok) {
+    ESP_LOGE(TAG, "Failed to configure PCNT unit for the rotary encoder");
+    this->mark_failed();
+    return;
+  }
+
+  pcnt_set_filter_value(this->pcnt_unit_, 1023);
+  pcnt_filter_enable(this->pcnt_unit_);
+  pcnt_counter_pause(this->pcnt_unit_);
+  pcnt_counter_clear(this->pcnt_unit_);
+  pcnt_counter_resume(this->pcnt_unit_);
+  this->pcnt_initialized_ = true;
+#else
+  ESP_LOGE(TAG, "This rotary encoder component requires ESP-IDF");
+  this->mark_failed();
+  return;
+#endif
 
   if (this->publish_initial_value_) {
     this->publish_value_(true);
@@ -131,7 +96,8 @@ void VieweSmartRotaryEncoderSensor::dump_config() {
   LOG_PIN("  Pin A: ", this->pin_a_);
   LOG_PIN("  Pin B: ", this->pin_b_);
   LOG_PIN("  Reset Pin: ", this->pin_reset_);
-  ESP_LOGCONFIG(TAG, "  ISR Aggregation: enabled");
+  ESP_LOGCONFIG(TAG, "  Decoder: PCNT quadrature");
+  ESP_LOGCONFIG(TAG, "  Glitch Filter: 1023 APB cycles");
   ESP_LOGCONFIG(TAG, "  Min Value: %" PRId32, this->min_value_);
   ESP_LOGCONFIG(TAG, "  Max Value: %" PRId32, this->max_value_);
 
@@ -144,7 +110,7 @@ void VieweSmartRotaryEncoderSensor::dump_config() {
       break;
   }
 
-  switch (this->store_.resolution) {
+  switch (this->resolution_) {
     case VIEWESMART_ROTARY_ENCODER_1_PULSE_PER_CYCLE:
       ESP_LOGCONFIG(TAG, "  Resolution: 1 pulse per cycle");
       break;
@@ -162,13 +128,32 @@ void VieweSmartRotaryEncoderSensor::loop() {
     this->set_value(0);
   }
 
-  const int32_t delta = this->consume_pending_delta_();
+#ifdef USE_ESP_IDF
+  if (!this->pcnt_initialized_) {
+    return;
+  }
+
+  int16_t raw_delta = 0;
+  if (pcnt_get_counter_value(this->pcnt_unit_, &raw_delta) != ESP_OK) {
+    ESP_LOGW(TAG, "Failed to read PCNT counter");
+    return;
+  }
+  pcnt_counter_clear(this->pcnt_unit_);
+
+  if (raw_delta != 0) {
+    this->raw_count_total_ += raw_delta;
+  }
+#endif
+
+  const int32_t current_step_count = this->raw_count_total_ / this->resolution_divider_();
+  const int32_t delta_steps = current_step_count - this->last_reported_step_count_;
   bool changed = false;
-  if (delta != 0) {
+
+  if (delta_steps != 0) {
     changed = true;
-    const int32_t steps = delta > 0 ? delta : -delta;
+    const int32_t steps = delta_steps > 0 ? delta_steps : -delta_steps;
     for (int32_t i = 0; i < steps; i++) {
-      if (delta > 0) {
+      if (delta_steps > 0) {
         this->value_ = clamp(this->value_ + 1, this->min_value_, this->max_value_);
         this->on_clockwise_callback_.call();
       } else {
@@ -176,6 +161,7 @@ void VieweSmartRotaryEncoderSensor::loop() {
         this->on_anticlockwise_callback_.call();
       }
     }
+    this->last_reported_step_count_ = current_step_count;
   }
 
   if (changed || this->pending_publish_ || this->publish_initial_value_) {
@@ -183,37 +169,34 @@ void VieweSmartRotaryEncoderSensor::loop() {
     this->pending_publish_ = false;
     this->publish_initial_value_ = false;
   }
-
-  if (this->last_reported_saturation_count_ != this->store_.saturation_count) {
-    const uint32_t delta_saturated = this->store_.saturation_count - this->last_reported_saturation_count_;
-    this->last_reported_saturation_count_ = this->store_.saturation_count;
-    ESP_LOGW(TAG, "Dropped %u rotary steps because the ISR accumulator saturated", delta_saturated);
-  }
-  if (this->last_reported_invalid_transition_count_ != this->store_.invalid_transition_count) {
-    const uint32_t delta = this->store_.invalid_transition_count - this->last_reported_invalid_transition_count_;
-    this->last_reported_invalid_transition_count_ = this->store_.invalid_transition_count;
-    ESP_LOGV(TAG, "Observed %u invalid quadrature transitions", delta);
-  }
 }
 
 float VieweSmartRotaryEncoderSensor::get_setup_priority() const { return setup_priority::IO; }
 
 void VieweSmartRotaryEncoderSensor::set_value(int value) {
-  this->clear_pending_events_();
+#ifdef USE_ESP_IDF
+  if (this->pcnt_initialized_) {
+    pcnt_counter_pause(this->pcnt_unit_);
+    pcnt_counter_clear(this->pcnt_unit_);
+    pcnt_counter_resume(this->pcnt_unit_);
+  }
+#endif
+  this->raw_count_total_ = 0;
+  this->last_reported_step_count_ = 0;
   this->value_ = clamp<int32_t>(value, this->min_value_, this->max_value_);
   this->pending_publish_ = true;
 }
 
-int32_t VieweSmartRotaryEncoderSensor::consume_pending_delta_() {
-  InterruptLock lock;
-  const int32_t delta = this->store_.pending_delta;
-  this->store_.pending_delta = 0;
-  return delta;
-}
-
-void VieweSmartRotaryEncoderSensor::clear_pending_events_() {
-  InterruptLock lock;
-  this->store_.pending_delta = 0;
+int VieweSmartRotaryEncoderSensor::resolution_divider_() const {
+  switch (this->resolution_) {
+    case VIEWESMART_ROTARY_ENCODER_1_PULSE_PER_CYCLE:
+      return 4;
+    case VIEWESMART_ROTARY_ENCODER_2_PULSES_PER_CYCLE:
+      return 2;
+    case VIEWESMART_ROTARY_ENCODER_4_PULSES_PER_CYCLE:
+      return 1;
+  }
+  return 4;
 }
 
 void VieweSmartRotaryEncoderSensor::publish_value_(bool force) {
