@@ -13,6 +13,7 @@ static const uint8_t POLL_DEBOUNCE_TICKS = 2;
 static const uint32_t STEP_PUBLISH_INTERVAL_MS = 10;
 static const uint32_t FAST_STEP_PUBLISH_INTERVAL_MS = 5;
 static const uint32_t DIRECTION_CONFIRMATION_WINDOW_MS = 180;
+static const uint32_t DIRECTION_MEMORY_TIMEOUT_MS = 700;
 static const uint32_t FASTEST_SPEED_THRESHOLD_MS = 25;
 static const uint32_t FAST_SPEED_THRESHOLD_MS = 45;
 static const uint32_t MEDIUM_SPEED_THRESHOLD_MS = 70;
@@ -84,6 +85,7 @@ void VieweSmartRotaryEncoderSensor::dump_config() {
   ESP_LOGCONFIG(TAG, "  Step Publish Interval: %" PRIu32 " ms", STEP_PUBLISH_INTERVAL_MS);
   ESP_LOGCONFIG(TAG, "  Fast Step Publish Interval: %" PRIu32 " ms", FAST_STEP_PUBLISH_INTERVAL_MS);
   ESP_LOGCONFIG(TAG, "  Reverse Direction Confirmation: %" PRIu32 " ms", DIRECTION_CONFIRMATION_WINDOW_MS);
+  ESP_LOGCONFIG(TAG, "  Direction Memory Timeout: %" PRIu32 " ms", DIRECTION_MEMORY_TIMEOUT_MS);
   ESP_LOGCONFIG(TAG, "  Slow Reverse Accept: disabled");
   ESP_LOGCONFIG(TAG, "  Speed Thresholds: slow_medium=%" PRIu32 ", medium=%" PRIu32 ", fast=%" PRIu32
                      ", fastest=%" PRIu32 " ms",
@@ -160,7 +162,10 @@ void VieweSmartRotaryEncoderSensor::loop() {
 
   if (this->pending_step_delta_ != 0 && (now - this->last_step_publish_ms_) >= effective_step_interval) {
     const int32_t direction = this->pending_step_delta_ > 0 ? 1 : -1;
-    const bool direction_changed = this->last_emitted_direction_ != 0 && direction != this->last_emitted_direction_;
+    const bool direction_memory_expired =
+        this->last_value_change_ms_ == 0 || (now - this->last_value_change_ms_) >= DIRECTION_MEMORY_TIMEOUT_MS;
+    const int8_t effective_last_direction = direction_memory_expired ? 0 : this->last_emitted_direction_;
+    const bool direction_changed = effective_last_direction != 0 && direction != effective_last_direction;
     const bool leaving_lower_bound = this->value_ == this->min_value_ && direction > 0;
     const bool leaving_upper_bound = this->value_ == this->max_value_ && direction < 0;
     const bool leaving_bound = leaving_lower_bound || leaving_upper_bound;
@@ -197,7 +202,7 @@ void VieweSmartRotaryEncoderSensor::loop() {
           ESP_LOGD(TAG,
                    "reject reverse pending=%" PRId32 " dir=%" PRId32 " last_dir=%" PRId8
                    " confirm=%u/%u magnitude=%" PRId32 "/%" PRId32 " high_speed=%s dt=%" PRIu32,
-                   this->pending_step_delta_, direction, this->last_emitted_direction_,
+                   this->pending_step_delta_, direction, effective_last_direction,
                    this->pending_direction_confirmation_count_, required_confirmation_count,
                    this->pending_direction_confirmation_magnitude_, required_confirmation_magnitude,
                    YESNO(high_speed_context), time_since_value_change);
