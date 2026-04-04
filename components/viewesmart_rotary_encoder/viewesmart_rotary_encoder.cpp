@@ -11,7 +11,6 @@ static const bool DIAGNOSTIC_DECODER_MODE = true;
 static const uint32_t STEP_PUBLISH_INTERVAL_MS = 10;
 static const uint32_t FAST_STEP_PUBLISH_INTERVAL_MS = 5;
 static const uint32_t DIRECTION_CONFIRMATION_WINDOW_MS = 180;
-static const uint32_t SLOW_REVERSE_ACCEPT_MS = 120;
 static const uint32_t FASTEST_SPEED_THRESHOLD_MS = 25;
 static const uint32_t FAST_SPEED_THRESHOLD_MS = 45;
 static const uint32_t MEDIUM_SPEED_THRESHOLD_MS = 70;
@@ -120,7 +119,7 @@ void VieweSmartRotaryEncoderSensor::dump_config() {
   ESP_LOGCONFIG(TAG, "  Step Publish Interval: %" PRIu32 " ms", STEP_PUBLISH_INTERVAL_MS);
   ESP_LOGCONFIG(TAG, "  Fast Step Publish Interval: %" PRIu32 " ms", FAST_STEP_PUBLISH_INTERVAL_MS);
   ESP_LOGCONFIG(TAG, "  Reverse Direction Confirmation: %" PRIu32 " ms", DIRECTION_CONFIRMATION_WINDOW_MS);
-  ESP_LOGCONFIG(TAG, "  Slow Reverse Accept: %" PRIu32 " ms", SLOW_REVERSE_ACCEPT_MS);
+  ESP_LOGCONFIG(TAG, "  Slow Reverse Accept: disabled");
   ESP_LOGCONFIG(TAG, "  Speed Thresholds: slow_medium=%" PRIu32 ", medium=%" PRIu32 ", fast=%" PRIu32
                      ", fastest=%" PRIu32 " ms",
                 SLOW_MEDIUM_SPEED_THRESHOLD_MS, MEDIUM_SPEED_THRESHOLD_MS, FAST_SPEED_THRESHOLD_MS,
@@ -213,11 +212,8 @@ void VieweSmartRotaryEncoderSensor::loop() {
     const bool high_speed_context =
         time_since_value_change <= FAST_SPEED_THRESHOLD_MS || pending_step_magnitude >= 4;
     const bool bypass_direction_confirmation = leaving_bound;
-    const bool slow_reverse_accept =
-        direction_changed && pending_step_magnitude == 1 && !high_speed_context &&
-        (now - this->last_step_publish_ms_) >= SLOW_REVERSE_ACCEPT_MS;
 
-    if (direction_changed && !bypass_direction_confirmation && !slow_reverse_accept) {
+    if (direction_changed && !bypass_direction_confirmation) {
       const uint8_t required_confirmation_count =
           high_speed_context ? HIGH_SPEED_REVERSE_CONFIRMATION_COUNT : NORMAL_REVERSE_CONFIRMATION_COUNT;
       const bool confirmation_window_open =
@@ -266,10 +262,9 @@ void VieweSmartRotaryEncoderSensor::loop() {
       if (DIAGNOSTIC_DECODER_MODE) {
         ESP_LOGD(TAG,
                  "accept pending=%" PRId32 " dir=%" PRId32 " step=%" PRId32 " value=%" PRId32 "->%" PRId32
-                 " changed_dir=%s slow_accept=%s leaving_bound=%s dt=%" PRIu32,
+                 " changed_dir=%s leaving_bound=%s dt=%" PRIu32,
                  this->pending_step_delta_, direction, value_step_size, previous_value, this->value_,
-                 YESNO(direction_changed), YESNO(slow_reverse_accept), YESNO(leaving_bound),
-                 time_since_value_change);
+                 YESNO(direction_changed), YESNO(leaving_bound), time_since_value_change);
       }
       if (direction > 0) {
         this->on_clockwise_callback_.call();
