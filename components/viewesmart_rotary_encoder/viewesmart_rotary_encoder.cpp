@@ -22,6 +22,8 @@ static const int32_t SLOW_MEDIUM_VALUE_STEP = 1;
 static const int32_t SLOW_VALUE_STEP = 1;
 static const uint8_t NORMAL_REVERSE_CONFIRMATION_COUNT = 2;
 static const uint8_t HIGH_SPEED_REVERSE_CONFIRMATION_COUNT = 3;
+static const int32_t NORMAL_REVERSE_CONFIRMATION_MAGNITUDE = 3;
+static const int32_t HIGH_SPEED_REVERSE_CONFIRMATION_MAGNITUDE = 4;
 
 #ifdef USE_ESP_IDF
 static pcnt_unit_t next_pcnt_unit() {
@@ -129,6 +131,8 @@ void VieweSmartRotaryEncoderSensor::dump_config() {
                 SLOW_VALUE_STEP, SLOW_MEDIUM_VALUE_STEP, MEDIUM_VALUE_STEP, FAST_VALUE_STEP, FASTEST_VALUE_STEP);
   ESP_LOGCONFIG(TAG, "  Reverse Confirmation Count: normal=%u, high_speed=%u",
                 NORMAL_REVERSE_CONFIRMATION_COUNT, HIGH_SPEED_REVERSE_CONFIRMATION_COUNT);
+  ESP_LOGCONFIG(TAG, "  Reverse Confirmation Magnitude: normal=%" PRId32 ", high_speed=%" PRId32,
+                NORMAL_REVERSE_CONFIRMATION_MAGNITUDE, HIGH_SPEED_REVERSE_CONFIRMATION_MAGNITUDE);
   ESP_LOGCONFIG(TAG, "  Min Value: %" PRId32, this->min_value_);
   ESP_LOGCONFIG(TAG, "  Max Value: %" PRId32, this->max_value_);
 
@@ -216,24 +220,31 @@ void VieweSmartRotaryEncoderSensor::loop() {
     if (direction_changed && !bypass_direction_confirmation) {
       const uint8_t required_confirmation_count =
           high_speed_context ? HIGH_SPEED_REVERSE_CONFIRMATION_COUNT : NORMAL_REVERSE_CONFIRMATION_COUNT;
+      const int32_t required_confirmation_magnitude =
+          high_speed_context ? HIGH_SPEED_REVERSE_CONFIRMATION_MAGNITUDE : NORMAL_REVERSE_CONFIRMATION_MAGNITUDE;
       const bool confirmation_window_open =
           this->pending_direction_confirmation_ == direction &&
           (now - this->pending_direction_confirmation_ms_) <= DIRECTION_CONFIRMATION_WINDOW_MS;
       if (confirmation_window_open) {
         this->pending_direction_confirmation_count_++;
+        this->pending_direction_confirmation_magnitude_ += pending_step_magnitude;
       } else {
         this->pending_direction_confirmation_ = direction;
         this->pending_direction_confirmation_ms_ = now;
         this->pending_direction_confirmation_count_ = 1;
+        this->pending_direction_confirmation_magnitude_ = pending_step_magnitude;
       }
 
-      if (this->pending_direction_confirmation_count_ < required_confirmation_count) {
+      if (this->pending_direction_confirmation_count_ < required_confirmation_count ||
+          this->pending_direction_confirmation_magnitude_ < required_confirmation_magnitude ||
+          pending_step_magnitude < 2) {
         if (DIAGNOSTIC_DECODER_MODE) {
           ESP_LOGD(TAG,
                    "reject reverse pending=%" PRId32 " dir=%" PRId32 " last_dir=%" PRId8
-                   " confirm=%u/%u high_speed=%s dt=%" PRIu32,
+                   " confirm=%u/%u magnitude=%" PRId32 "/%" PRId32 " high_speed=%s dt=%" PRIu32,
                    this->pending_step_delta_, direction, this->last_emitted_direction_,
                    this->pending_direction_confirmation_count_, required_confirmation_count,
+                   this->pending_direction_confirmation_magnitude_, required_confirmation_magnitude,
                    YESNO(high_speed_context), time_since_value_change);
         }
         this->pending_step_delta_ = 0;
@@ -281,6 +292,7 @@ void VieweSmartRotaryEncoderSensor::loop() {
 
     this->pending_direction_confirmation_ = 0;
     this->pending_direction_confirmation_count_ = 0;
+    this->pending_direction_confirmation_magnitude_ = 0;
     this->pending_direction_confirmation_ms_ = 0;
     this->pending_step_delta_ = 0;
     this->last_step_publish_ms_ = now;
@@ -311,6 +323,7 @@ void VieweSmartRotaryEncoderSensor::set_value(int value) {
   this->last_emitted_direction_ = 0;
   this->pending_direction_confirmation_ = 0;
   this->pending_direction_confirmation_count_ = 0;
+  this->pending_direction_confirmation_magnitude_ = 0;
   this->pending_direction_confirmation_ms_ = 0;
   this->value_ = clamp<int32_t>(value, this->min_value_, this->max_value_);
   this->pending_publish_ = true;

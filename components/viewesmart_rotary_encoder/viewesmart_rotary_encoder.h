@@ -78,6 +78,7 @@ class VieweSmartRotaryEncoderSensor : public sensor::Sensor, public Component {
   int8_t last_emitted_direction_{0};
   int8_t pending_direction_confirmation_{0};
   uint8_t pending_direction_confirmation_count_{0};
+  int32_t pending_direction_confirmation_magnitude_{0};
   uint32_t pending_direction_confirmation_ms_{0};
 
   VieweSmartRotaryEncoderResolution resolution_{VIEWESMART_ROTARY_ENCODER_1_PULSE_PER_CYCLE};
