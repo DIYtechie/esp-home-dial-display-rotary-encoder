@@ -344,7 +344,7 @@ int32_t VieweSmartRotaryEncoderSensor::poll_encoder_delta_() {
       if (this->encoder_b_change_) {
         this->encoder_b_change_ = false;
         this->poll_state_ = POLL_STATE_READY;
-        return step_delta;
+        return -step_delta;
       }
       if (this->encoder_a_change_) {
         this->encoder_a_change_ = false;
@@ -356,7 +356,7 @@ int32_t VieweSmartRotaryEncoderSensor::poll_encoder_delta_() {
       if (this->encoder_a_change_) {
         this->encoder_a_change_ = false;
         this->poll_state_ = POLL_STATE_READY;
-        return -step_delta;
+        return step_delta;
       }
       if (this->encoder_b_change_) {
         this->encoder_b_change_ = false;
