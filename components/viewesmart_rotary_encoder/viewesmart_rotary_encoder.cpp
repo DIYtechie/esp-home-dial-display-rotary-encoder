@@ -10,7 +10,8 @@ static const char *const TAG = "viewesmart_rotary";
 static const uint32_t STEP_PUBLISH_INTERVAL_MS = 10;
 static const uint32_t FAST_STEP_PUBLISH_INTERVAL_MS = 5;
 static const uint32_t DIRECTION_CONFIRMATION_WINDOW_MS = 180;
-static const int32_t MAX_STEPS_PER_INTERVAL = 5;
+static const uint32_t SLOW_REVERSE_ACCEPT_MS = 120;
+static const int32_t MAX_STEPS_PER_INTERVAL = 7;
 
 #ifdef USE_ESP_IDF
 static pcnt_unit_t next_pcnt_unit() {
@@ -106,6 +107,7 @@ void VieweSmartRotaryEncoderSensor::dump_config() {
   ESP_LOGCONFIG(TAG, "  Step Publish Interval: %" PRIu32 " ms", STEP_PUBLISH_INTERVAL_MS);
   ESP_LOGCONFIG(TAG, "  Fast Step Publish Interval: %" PRIu32 " ms", FAST_STEP_PUBLISH_INTERVAL_MS);
   ESP_LOGCONFIG(TAG, "  Reverse Direction Confirmation: %" PRIu32 " ms", DIRECTION_CONFIRMATION_WINDOW_MS);
+  ESP_LOGCONFIG(TAG, "  Slow Reverse Accept: %" PRIu32 " ms", SLOW_REVERSE_ACCEPT_MS);
   ESP_LOGCONFIG(TAG, "  Max Steps Per Interval: %" PRId32, MAX_STEPS_PER_INTERVAL);
   ESP_LOGCONFIG(TAG, "  Min Value: %" PRId32, this->min_value_);
   ESP_LOGCONFIG(TAG, "  Max Value: %" PRId32, this->max_value_);
@@ -175,8 +177,10 @@ void VieweSmartRotaryEncoderSensor::loop() {
     const bool leaving_upper_bound = this->value_ == this->max_value_ && direction < 0;
     const bool leaving_bound = leaving_lower_bound || leaving_upper_bound;
     const bool bypass_direction_confirmation = pending_step_magnitude >= 2 || leaving_bound;
+    const bool slow_reverse_accept = direction_changed && pending_step_magnitude == 1 &&
+                                     (now - this->last_step_publish_ms_) >= SLOW_REVERSE_ACCEPT_MS;
 
-    if (direction_changed && !bypass_direction_confirmation) {
+    if (direction_changed && !bypass_direction_confirmation && !slow_reverse_accept) {
       const bool confirmed = this->pending_direction_confirmation_ == direction &&
                              (now - this->pending_direction_confirmation_ms_) <= DIRECTION_CONFIRMATION_WINDOW_MS;
       if (!confirmed) {
