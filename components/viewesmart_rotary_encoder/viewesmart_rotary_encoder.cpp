@@ -8,6 +8,7 @@ namespace viewesmart_rotary_encoder {
 
 static const char *const TAG = "viewesmart_rotary";
 static const uint32_t STEP_PUBLISH_INTERVAL_MS = 10;
+static const uint32_t DIRECTION_CONFIRMATION_WINDOW_MS = 80;
 
 #ifdef USE_ESP_IDF
 static pcnt_unit_t next_pcnt_unit() {
@@ -101,6 +102,7 @@ void VieweSmartRotaryEncoderSensor::dump_config() {
   ESP_LOGCONFIG(TAG, "  Decoder: PCNT quadrature");
   ESP_LOGCONFIG(TAG, "  Glitch Filter: 1023 APB cycles");
   ESP_LOGCONFIG(TAG, "  Step Publish Interval: %" PRIu32 " ms", STEP_PUBLISH_INTERVAL_MS);
+  ESP_LOGCONFIG(TAG, "  Reverse Direction Confirmation: %" PRIu32 " ms", DIRECTION_CONFIRMATION_WINDOW_MS);
   ESP_LOGCONFIG(TAG, "  Min Value: %" PRId32, this->min_value_);
   ESP_LOGCONFIG(TAG, "  Max Value: %" PRId32, this->max_value_);
 
@@ -160,6 +162,20 @@ void VieweSmartRotaryEncoderSensor::loop() {
   const uint32_t now = millis();
   if (this->pending_step_delta_ != 0 && (now - this->last_step_publish_ms_) >= STEP_PUBLISH_INTERVAL_MS) {
     const int32_t direction = this->pending_step_delta_ > 0 ? 1 : -1;
+    const bool direction_changed = this->last_emitted_direction_ != 0 && direction != this->last_emitted_direction_;
+
+    if (direction_changed) {
+      const bool confirmed = this->pending_direction_confirmation_ == direction &&
+                             (now - this->pending_direction_confirmation_ms_) <= DIRECTION_CONFIRMATION_WINDOW_MS;
+      if (!confirmed) {
+        this->pending_direction_confirmation_ = direction;
+        this->pending_direction_confirmation_ms_ = now;
+        this->pending_step_delta_ = 0;
+        this->last_step_publish_ms_ = now;
+        return;
+      }
+    }
+
     const int32_t previous_value = this->value_;
     this->value_ = clamp(this->value_ + direction, this->min_value_, this->max_value_);
 
@@ -170,8 +186,11 @@ void VieweSmartRotaryEncoderSensor::loop() {
         this->on_anticlockwise_callback_.call();
       }
       changed = true;
+      this->last_emitted_direction_ = direction;
     }
 
+    this->pending_direction_confirmation_ = 0;
+    this->pending_direction_confirmation_ms_ = 0;
     this->pending_step_delta_ = 0;
     this->last_step_publish_ms_ = now;
   }
@@ -197,6 +216,9 @@ void VieweSmartRotaryEncoderSensor::set_value(int value) {
   this->last_reported_step_count_ = 0;
   this->pending_step_delta_ = 0;
   this->last_step_publish_ms_ = millis();
+  this->last_emitted_direction_ = 0;
+  this->pending_direction_confirmation_ = 0;
+  this->pending_direction_confirmation_ms_ = 0;
   this->value_ = clamp<int32_t>(value, this->min_value_, this->max_value_);
   this->pending_publish_ = true;
 }
