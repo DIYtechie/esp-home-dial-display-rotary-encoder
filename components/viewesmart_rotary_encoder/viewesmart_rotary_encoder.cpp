@@ -9,8 +9,8 @@ namespace viewesmart_rotary_encoder {
 static const char *const TAG = "viewesmart_rotary";
 static const uint32_t STEP_PUBLISH_INTERVAL_MS = 10;
 static const uint32_t FAST_STEP_PUBLISH_INTERVAL_MS = 5;
-static const uint32_t DIRECTION_CONFIRMATION_WINDOW_MS = 40;
-static const int32_t MAX_STEPS_PER_INTERVAL = 3;
+static const uint32_t DIRECTION_CONFIRMATION_WINDOW_MS = 180;
+static const int32_t MAX_STEPS_PER_INTERVAL = 5;
 
 #ifdef USE_ESP_IDF
 static pcnt_unit_t next_pcnt_unit() {
