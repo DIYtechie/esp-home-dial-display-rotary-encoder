@@ -8,7 +8,7 @@ namespace viewesmart_rotary_encoder {
 
 static const char *const TAG = "viewesmart_rotary";
 static const bool DIAGNOSTIC_DECODER_MODE = false;
-static const uint32_t POLL_INTERVAL_MS = 3;
+static const uint32_t POLL_INTERVAL_MS = 2;
 static const uint8_t POLL_DEBOUNCE_TICKS = 2;
 static const uint32_t STEP_PUBLISH_INTERVAL_MS = 10;
 static const uint32_t FAST_STEP_PUBLISH_INTERVAL_MS = 5;
