@@ -7,13 +7,13 @@ namespace esphome {
 namespace viewesmart_rotary_encoder {
 
 static const char *const TAG = "viewesmart_rotary";
-static const bool DIAGNOSTIC_DECODER_MODE = true;
+static const bool DIAGNOSTIC_DECODER_MODE = false;
 static const uint32_t POLL_INTERVAL_MS = 3;
 static const uint8_t POLL_DEBOUNCE_TICKS = 2;
 static const uint32_t STEP_PUBLISH_INTERVAL_MS = 10;
 static const uint32_t FAST_STEP_PUBLISH_INTERVAL_MS = 5;
 static const uint32_t DIRECTION_CONFIRMATION_WINDOW_MS = 180;
-static const uint32_t DIRECTION_MEMORY_TIMEOUT_MS = 700;
+static const uint32_t DIRECTION_MEMORY_TIMEOUT_MS = 550;
 static const uint32_t FASTEST_SPEED_THRESHOLD_MS = 25;
 static const uint32_t FAST_SPEED_THRESHOLD_MS = 45;
 static const uint32_t MEDIUM_SPEED_THRESHOLD_MS = 70;
