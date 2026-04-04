@@ -11,7 +11,11 @@ static const uint32_t STEP_PUBLISH_INTERVAL_MS = 10;
 static const uint32_t FAST_STEP_PUBLISH_INTERVAL_MS = 5;
 static const uint32_t DIRECTION_CONFIRMATION_WINDOW_MS = 180;
 static const uint32_t SLOW_REVERSE_ACCEPT_MS = 120;
-static const int32_t MAX_STEPS_PER_INTERVAL = 7;
+static const uint32_t FAST_SPEED_THRESHOLD_MS = 50;
+static const uint32_t MEDIUM_SPEED_THRESHOLD_MS = 150;
+static const int32_t FAST_VALUE_STEP = 4;
+static const int32_t MEDIUM_VALUE_STEP = 2;
+static const int32_t SLOW_VALUE_STEP = 1;
 
 #ifdef USE_ESP_IDF
 static pcnt_unit_t next_pcnt_unit() {
@@ -55,6 +59,7 @@ void VieweSmartRotaryEncoderSensor::setup() {
   this->value_ = clamp(initial_value, this->min_value_, this->max_value_);
   this->last_published_ = this->value_;
   this->last_step_publish_ms_ = millis();
+  this->last_value_change_ms_ = 0;
 
   this->pin_a_->setup();
   this->pin_b_->setup();
@@ -108,7 +113,10 @@ void VieweSmartRotaryEncoderSensor::dump_config() {
   ESP_LOGCONFIG(TAG, "  Fast Step Publish Interval: %" PRIu32 " ms", FAST_STEP_PUBLISH_INTERVAL_MS);
   ESP_LOGCONFIG(TAG, "  Reverse Direction Confirmation: %" PRIu32 " ms", DIRECTION_CONFIRMATION_WINDOW_MS);
   ESP_LOGCONFIG(TAG, "  Slow Reverse Accept: %" PRIu32 " ms", SLOW_REVERSE_ACCEPT_MS);
-  ESP_LOGCONFIG(TAG, "  Max Steps Per Interval: %" PRId32, MAX_STEPS_PER_INTERVAL);
+  ESP_LOGCONFIG(TAG, "  Fast Speed Threshold: %" PRIu32 " ms", FAST_SPEED_THRESHOLD_MS);
+  ESP_LOGCONFIG(TAG, "  Medium Speed Threshold: %" PRIu32 " ms", MEDIUM_SPEED_THRESHOLD_MS);
+  ESP_LOGCONFIG(TAG, "  Step Sizes: slow=%" PRId32 ", medium=%" PRId32 ", fast=%" PRId32, SLOW_VALUE_STEP,
+                MEDIUM_VALUE_STEP, FAST_VALUE_STEP);
   ESP_LOGCONFIG(TAG, "  Min Value: %" PRId32, this->min_value_);
   ESP_LOGCONFIG(TAG, "  Max Value: %" PRId32, this->max_value_);
 
@@ -192,18 +200,24 @@ void VieweSmartRotaryEncoderSensor::loop() {
       }
     }
 
-    const bool confident_motion = !direction_changed && !leaving_bound;
-    const int32_t allowed_steps =
-        confident_motion ? std::min<int32_t>(pending_step_magnitude, MAX_STEPS_PER_INTERVAL) : 1;
+    uint32_t time_since_value_change = UINT32_MAX;
+    if (this->last_value_change_ms_ != 0) {
+      time_since_value_change = now - this->last_value_change_ms_;
+    }
 
-    for (int32_t i = 0; i < allowed_steps; i++) {
-      const int32_t previous_value = this->value_;
-      this->value_ = clamp(this->value_ + direction, this->min_value_, this->max_value_);
-
-      if (this->value_ == previous_value) {
-        break;
+    int32_t value_step_size = SLOW_VALUE_STEP;
+    if (!direction_changed) {
+      if (time_since_value_change <= FAST_SPEED_THRESHOLD_MS) {
+        value_step_size = FAST_VALUE_STEP;
+      } else if (time_since_value_change <= MEDIUM_SPEED_THRESHOLD_MS) {
+        value_step_size = MEDIUM_VALUE_STEP;
       }
+    }
 
+    const int32_t previous_value = this->value_;
+    this->value_ = clamp(this->value_ + direction * value_step_size, this->min_value_, this->max_value_);
+
+    if (this->value_ != previous_value) {
       if (direction > 0) {
         this->on_clockwise_callback_.call();
       } else {
@@ -211,6 +225,7 @@ void VieweSmartRotaryEncoderSensor::loop() {
       }
       changed = true;
       this->last_emitted_direction_ = direction;
+      this->last_value_change_ms_ = now;
     }
 
     this->pending_direction_confirmation_ = 0;
@@ -240,6 +255,7 @@ void VieweSmartRotaryEncoderSensor::set_value(int value) {
   this->last_reported_step_count_ = 0;
   this->pending_step_delta_ = 0;
   this->last_step_publish_ms_ = millis();
+  this->last_value_change_ms_ = 0;
   this->last_emitted_direction_ = 0;
   this->pending_direction_confirmation_ = 0;
   this->pending_direction_confirmation_ms_ = 0;
