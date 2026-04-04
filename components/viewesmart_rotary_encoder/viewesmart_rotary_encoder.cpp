@@ -10,6 +10,7 @@ static const char *const TAG = "viewesmart_rotary";
 static const uint32_t STEP_PUBLISH_INTERVAL_MS = 10;
 static const uint32_t FAST_STEP_PUBLISH_INTERVAL_MS = 5;
 static const uint32_t DIRECTION_CONFIRMATION_WINDOW_MS = 80;
+static const int32_t MAX_STEPS_PER_INTERVAL = 3;
 
 #ifdef USE_ESP_IDF
 static pcnt_unit_t next_pcnt_unit() {
@@ -105,6 +106,7 @@ void VieweSmartRotaryEncoderSensor::dump_config() {
   ESP_LOGCONFIG(TAG, "  Step Publish Interval: %" PRIu32 " ms", STEP_PUBLISH_INTERVAL_MS);
   ESP_LOGCONFIG(TAG, "  Fast Step Publish Interval: %" PRIu32 " ms", FAST_STEP_PUBLISH_INTERVAL_MS);
   ESP_LOGCONFIG(TAG, "  Reverse Direction Confirmation: %" PRIu32 " ms", DIRECTION_CONFIRMATION_WINDOW_MS);
+  ESP_LOGCONFIG(TAG, "  Max Steps Per Interval: %" PRId32, MAX_STEPS_PER_INTERVAL);
   ESP_LOGCONFIG(TAG, "  Min Value: %" PRId32, this->min_value_);
   ESP_LOGCONFIG(TAG, "  Max Value: %" PRId32, this->max_value_);
 
@@ -186,10 +188,18 @@ void VieweSmartRotaryEncoderSensor::loop() {
       }
     }
 
-    const int32_t previous_value = this->value_;
-    this->value_ = clamp(this->value_ + direction, this->min_value_, this->max_value_);
+    const bool confident_motion = !direction_changed && !leaving_bound;
+    const int32_t allowed_steps =
+        confident_motion ? std::min<int32_t>(pending_step_magnitude, MAX_STEPS_PER_INTERVAL) : 1;
 
-    if (this->value_ != previous_value) {
+    for (int32_t i = 0; i < allowed_steps; i++) {
+      const int32_t previous_value = this->value_;
+      this->value_ = clamp(this->value_ + direction, this->min_value_, this->max_value_);
+
+      if (this->value_ == previous_value) {
+        break;
+      }
+
       if (direction > 0) {
         this->on_clockwise_callback_.call();
       } else {
