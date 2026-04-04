@@ -16,6 +16,8 @@ static const uint32_t MEDIUM_SPEED_THRESHOLD_MS = 150;
 static const int32_t FAST_VALUE_STEP = 10;
 static const int32_t MEDIUM_VALUE_STEP = 5;
 static const int32_t SLOW_VALUE_STEP = 1;
+static const uint8_t NORMAL_REVERSE_CONFIRMATION_COUNT = 2;
+static const uint8_t HIGH_SPEED_REVERSE_CONFIRMATION_COUNT = 3;
 
 #ifdef USE_ESP_IDF
 static pcnt_unit_t next_pcnt_unit() {
@@ -117,6 +119,8 @@ void VieweSmartRotaryEncoderSensor::dump_config() {
   ESP_LOGCONFIG(TAG, "  Medium Speed Threshold: %" PRIu32 " ms", MEDIUM_SPEED_THRESHOLD_MS);
   ESP_LOGCONFIG(TAG, "  Step Sizes: slow=%" PRId32 ", medium=%" PRId32 ", fast=%" PRId32, SLOW_VALUE_STEP,
                 MEDIUM_VALUE_STEP, FAST_VALUE_STEP);
+  ESP_LOGCONFIG(TAG, "  Reverse Confirmation Count: normal=%u, high_speed=%u",
+                NORMAL_REVERSE_CONFIRMATION_COUNT, HIGH_SPEED_REVERSE_CONFIRMATION_COUNT);
   ESP_LOGCONFIG(TAG, "  Min Value: %" PRId32, this->min_value_);
   ESP_LOGCONFIG(TAG, "  Max Value: %" PRId32, this->max_value_);
 
@@ -184,25 +188,36 @@ void VieweSmartRotaryEncoderSensor::loop() {
     const bool leaving_lower_bound = this->value_ == this->min_value_ && direction > 0;
     const bool leaving_upper_bound = this->value_ == this->max_value_ && direction < 0;
     const bool leaving_bound = leaving_lower_bound || leaving_upper_bound;
-    const bool bypass_direction_confirmation = pending_step_magnitude >= 2 || leaving_bound;
-    const bool slow_reverse_accept = direction_changed && pending_step_magnitude == 1 &&
-                                     (now - this->last_step_publish_ms_) >= SLOW_REVERSE_ACCEPT_MS;
+    uint32_t time_since_value_change = UINT32_MAX;
+    if (this->last_value_change_ms_ != 0) {
+      time_since_value_change = now - this->last_value_change_ms_;
+    }
+
+    const bool high_speed_context = time_since_value_change <= FAST_SPEED_THRESHOLD_MS || pending_step_magnitude >= 4;
+    const bool bypass_direction_confirmation = leaving_bound;
+    const bool slow_reverse_accept =
+        direction_changed && pending_step_magnitude == 1 && !high_speed_context &&
+        (now - this->last_step_publish_ms_) >= SLOW_REVERSE_ACCEPT_MS;
 
     if (direction_changed && !bypass_direction_confirmation && !slow_reverse_accept) {
-      const bool confirmed = this->pending_direction_confirmation_ == direction &&
-                             (now - this->pending_direction_confirmation_ms_) <= DIRECTION_CONFIRMATION_WINDOW_MS;
-      if (!confirmed) {
+      const uint8_t required_confirmation_count =
+          high_speed_context ? HIGH_SPEED_REVERSE_CONFIRMATION_COUNT : NORMAL_REVERSE_CONFIRMATION_COUNT;
+      const bool confirmation_window_open =
+          this->pending_direction_confirmation_ == direction &&
+          (now - this->pending_direction_confirmation_ms_) <= DIRECTION_CONFIRMATION_WINDOW_MS;
+      if (confirmation_window_open) {
+        this->pending_direction_confirmation_count_++;
+      } else {
         this->pending_direction_confirmation_ = direction;
         this->pending_direction_confirmation_ms_ = now;
+        this->pending_direction_confirmation_count_ = 1;
+      }
+
+      if (this->pending_direction_confirmation_count_ < required_confirmation_count) {
         this->pending_step_delta_ = 0;
         this->last_step_publish_ms_ = now;
         return;
       }
-    }
-
-    uint32_t time_since_value_change = UINT32_MAX;
-    if (this->last_value_change_ms_ != 0) {
-      time_since_value_change = now - this->last_value_change_ms_;
     }
 
     int32_t value_step_size = SLOW_VALUE_STEP;
@@ -229,6 +244,7 @@ void VieweSmartRotaryEncoderSensor::loop() {
     }
 
     this->pending_direction_confirmation_ = 0;
+    this->pending_direction_confirmation_count_ = 0;
     this->pending_direction_confirmation_ms_ = 0;
     this->pending_step_delta_ = 0;
     this->last_step_publish_ms_ = now;
@@ -258,6 +274,7 @@ void VieweSmartRotaryEncoderSensor::set_value(int value) {
   this->last_value_change_ms_ = 0;
   this->last_emitted_direction_ = 0;
   this->pending_direction_confirmation_ = 0;
+  this->pending_direction_confirmation_count_ = 0;
   this->pending_direction_confirmation_ms_ = 0;
   this->value_ = clamp<int32_t>(value, this->min_value_, this->max_value_);
   this->pending_publish_ = true;
