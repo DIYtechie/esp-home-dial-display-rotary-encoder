@@ -7,6 +7,7 @@ namespace esphome {
 namespace viewesmart_rotary_encoder {
 
 static const char *const TAG = "viewesmart_rotary";
+static const uint32_t STEP_PUBLISH_INTERVAL_MS = 20;
 
 #ifdef USE_ESP_IDF
 static pcnt_unit_t next_pcnt_unit() {
@@ -49,6 +50,7 @@ void VieweSmartRotaryEncoderSensor::setup() {
 
   this->value_ = clamp(initial_value, this->min_value_, this->max_value_);
   this->last_published_ = this->value_;
+  this->last_step_publish_ms_ = millis();
 
   this->pin_a_->setup();
   this->pin_b_->setup();
@@ -98,6 +100,7 @@ void VieweSmartRotaryEncoderSensor::dump_config() {
   LOG_PIN("  Reset Pin: ", this->pin_reset_);
   ESP_LOGCONFIG(TAG, "  Decoder: PCNT quadrature");
   ESP_LOGCONFIG(TAG, "  Glitch Filter: 1023 APB cycles");
+  ESP_LOGCONFIG(TAG, "  Step Publish Interval: %" PRIu32 " ms", STEP_PUBLISH_INTERVAL_MS);
   ESP_LOGCONFIG(TAG, "  Min Value: %" PRId32, this->min_value_);
   ESP_LOGCONFIG(TAG, "  Max Value: %" PRId32, this->max_value_);
 
@@ -150,18 +153,27 @@ void VieweSmartRotaryEncoderSensor::loop() {
   bool changed = false;
 
   if (delta_steps != 0) {
-    changed = true;
-    const int32_t steps = delta_steps > 0 ? delta_steps : -delta_steps;
-    for (int32_t i = 0; i < steps; i++) {
-      if (delta_steps > 0) {
-        this->value_ = clamp(this->value_ + 1, this->min_value_, this->max_value_);
+    this->pending_step_delta_ += delta_steps;
+    this->last_reported_step_count_ = current_step_count;
+  }
+
+  const uint32_t now = millis();
+  if (this->pending_step_delta_ != 0 && (now - this->last_step_publish_ms_) >= STEP_PUBLISH_INTERVAL_MS) {
+    const int32_t direction = this->pending_step_delta_ > 0 ? 1 : -1;
+    const int32_t previous_value = this->value_;
+    this->value_ = clamp(this->value_ + direction, this->min_value_, this->max_value_);
+
+    if (this->value_ != previous_value) {
+      if (direction > 0) {
         this->on_clockwise_callback_.call();
       } else {
-        this->value_ = clamp(this->value_ - 1, this->min_value_, this->max_value_);
         this->on_anticlockwise_callback_.call();
       }
+      changed = true;
     }
-    this->last_reported_step_count_ = current_step_count;
+
+    this->pending_step_delta_ -= direction;
+    this->last_step_publish_ms_ = now;
   }
 
   if (changed || this->pending_publish_ || this->publish_initial_value_) {
@@ -183,6 +195,8 @@ void VieweSmartRotaryEncoderSensor::set_value(int value) {
 #endif
   this->raw_count_total_ = 0;
   this->last_reported_step_count_ = 0;
+  this->pending_step_delta_ = 0;
+  this->last_step_publish_ms_ = millis();
   this->value_ = clamp<int32_t>(value, this->min_value_, this->max_value_);
   this->pending_publish_ = true;
 }
