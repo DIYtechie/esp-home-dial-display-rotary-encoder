@@ -8,6 +8,7 @@ namespace viewesmart_rotary_encoder {
 
 static const char *const TAG = "viewesmart_rotary";
 static const uint32_t STEP_PUBLISH_INTERVAL_MS = 10;
+static const uint32_t FAST_STEP_PUBLISH_INTERVAL_MS = 5;
 static const uint32_t DIRECTION_CONFIRMATION_WINDOW_MS = 80;
 
 #ifdef USE_ESP_IDF
@@ -102,6 +103,7 @@ void VieweSmartRotaryEncoderSensor::dump_config() {
   ESP_LOGCONFIG(TAG, "  Decoder: PCNT quadrature");
   ESP_LOGCONFIG(TAG, "  Glitch Filter: 1023 APB cycles");
   ESP_LOGCONFIG(TAG, "  Step Publish Interval: %" PRIu32 " ms", STEP_PUBLISH_INTERVAL_MS);
+  ESP_LOGCONFIG(TAG, "  Fast Step Publish Interval: %" PRIu32 " ms", FAST_STEP_PUBLISH_INTERVAL_MS);
   ESP_LOGCONFIG(TAG, "  Reverse Direction Confirmation: %" PRIu32 " ms", DIRECTION_CONFIRMATION_WINDOW_MS);
   ESP_LOGCONFIG(TAG, "  Min Value: %" PRId32, this->min_value_);
   ESP_LOGCONFIG(TAG, "  Max Value: %" PRId32, this->max_value_);
@@ -160,12 +162,17 @@ void VieweSmartRotaryEncoderSensor::loop() {
   }
 
   const uint32_t now = millis();
-  if (this->pending_step_delta_ != 0 && (now - this->last_step_publish_ms_) >= STEP_PUBLISH_INTERVAL_MS) {
+  const int32_t pending_step_magnitude = abs(this->pending_step_delta_);
+  const uint32_t effective_step_interval =
+      pending_step_magnitude >= 2 ? FAST_STEP_PUBLISH_INTERVAL_MS : STEP_PUBLISH_INTERVAL_MS;
+
+  if (this->pending_step_delta_ != 0 && (now - this->last_step_publish_ms_) >= effective_step_interval) {
     const int32_t direction = this->pending_step_delta_ > 0 ? 1 : -1;
     const bool direction_changed = this->last_emitted_direction_ != 0 && direction != this->last_emitted_direction_;
     const bool leaving_lower_bound = this->value_ == this->min_value_ && direction > 0;
     const bool leaving_upper_bound = this->value_ == this->max_value_ && direction < 0;
-    const bool bypass_direction_confirmation = leaving_lower_bound || leaving_upper_bound;
+    const bool leaving_bound = leaving_lower_bound || leaving_upper_bound;
+    const bool bypass_direction_confirmation = leaving_bound && pending_step_magnitude >= 2;
 
     if (direction_changed && !bypass_direction_confirmation) {
       const bool confirmed = this->pending_direction_confirmation_ == direction &&
