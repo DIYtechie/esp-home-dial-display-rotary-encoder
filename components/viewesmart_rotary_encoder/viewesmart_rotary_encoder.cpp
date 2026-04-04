@@ -9,7 +9,7 @@ namespace viewesmart_rotary_encoder {
 static const char *const TAG = "viewesmart_rotary";
 static const uint32_t STEP_PUBLISH_INTERVAL_MS = 10;
 static const uint32_t FAST_STEP_PUBLISH_INTERVAL_MS = 5;
-static const uint32_t DIRECTION_CONFIRMATION_WINDOW_MS = 80;
+static const uint32_t DIRECTION_CONFIRMATION_WINDOW_MS = 40;
 static const int32_t MAX_STEPS_PER_INTERVAL = 3;
 
 #ifdef USE_ESP_IDF
@@ -174,7 +174,7 @@ void VieweSmartRotaryEncoderSensor::loop() {
     const bool leaving_lower_bound = this->value_ == this->min_value_ && direction > 0;
     const bool leaving_upper_bound = this->value_ == this->max_value_ && direction < 0;
     const bool leaving_bound = leaving_lower_bound || leaving_upper_bound;
-    const bool bypass_direction_confirmation = leaving_bound && pending_step_magnitude >= 2;
+    const bool bypass_direction_confirmation = pending_step_magnitude >= 2 || leaving_bound;
 
     if (direction_changed && !bypass_direction_confirmation) {
       const bool confirmed = this->pending_direction_confirmation_ == direction &&
