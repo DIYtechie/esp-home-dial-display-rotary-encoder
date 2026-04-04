@@ -215,13 +215,13 @@ void VieweSmartRotaryEncoderSensor::loop() {
 
     int32_t value_step_size = SLOW_VALUE_STEP;
     if (!DIAGNOSTIC_DECODER_MODE && !direction_changed) {
-      if (pending_step_magnitude >= 5 || time_since_value_change <= FASTEST_SPEED_THRESHOLD_MS) {
+      if (time_since_value_change <= FASTEST_SPEED_THRESHOLD_MS) {
         value_step_size = FASTEST_VALUE_STEP;
-      } else if (pending_step_magnitude >= 4 || time_since_value_change <= FAST_SPEED_THRESHOLD_MS) {
+      } else if (time_since_value_change <= FAST_SPEED_THRESHOLD_MS) {
         value_step_size = FAST_VALUE_STEP;
-      } else if (pending_step_magnitude >= 3 || time_since_value_change <= MEDIUM_SPEED_THRESHOLD_MS) {
+      } else if (time_since_value_change <= MEDIUM_SPEED_THRESHOLD_MS) {
         value_step_size = MEDIUM_VALUE_STEP;
-      } else if (pending_step_magnitude >= 2 || time_since_value_change <= SLOW_MEDIUM_SPEED_THRESHOLD_MS) {
+      } else if (time_since_value_change <= SLOW_MEDIUM_SPEED_THRESHOLD_MS) {
         value_step_size = SLOW_MEDIUM_VALUE_STEP;
       }
     }
