@@ -163,8 +163,11 @@ void VieweSmartRotaryEncoderSensor::loop() {
   if (this->pending_step_delta_ != 0 && (now - this->last_step_publish_ms_) >= STEP_PUBLISH_INTERVAL_MS) {
     const int32_t direction = this->pending_step_delta_ > 0 ? 1 : -1;
     const bool direction_changed = this->last_emitted_direction_ != 0 && direction != this->last_emitted_direction_;
+    const bool leaving_lower_bound = this->value_ == this->min_value_ && direction > 0;
+    const bool leaving_upper_bound = this->value_ == this->max_value_ && direction < 0;
+    const bool bypass_direction_confirmation = leaving_lower_bound || leaving_upper_bound;
 
-    if (direction_changed) {
+    if (direction_changed && !bypass_direction_confirmation) {
       const bool confirmed = this->pending_direction_confirmation_ == direction &&
                              (now - this->pending_direction_confirmation_ms_) <= DIRECTION_CONFIRMATION_WINDOW_MS;
       if (!confirmed) {
