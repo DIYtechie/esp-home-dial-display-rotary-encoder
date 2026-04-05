@@ -312,7 +312,7 @@ int VieweSmartRotaryEncoderSensor::step_size_from_half_cycle_timing_() const {
       clamp<uint32_t>(this->last_valid_half_cycle_interval_ms_, HALF_CYCLE_MIN_MS, HALF_CYCLE_MAX_MS);
   const float normalized =
       static_cast<float>(HALF_CYCLE_MAX_MS - clamped_half_dt) / static_cast<float>(HALF_CYCLE_MAX_MS - HALF_CYCLE_MIN_MS);
-  const float curved = normalized * normalized;
+  const float curved = normalized * normalized * normalized;
   const float step_value =
       HALF_CYCLE_MIN_STEP + curved * static_cast<float>(HALF_CYCLE_MAX_STEP - HALF_CYCLE_MIN_STEP);
   return clamp<int32_t>(static_cast<int32_t>(step_value + 0.5f), HALF_CYCLE_MIN_STEP, HALF_CYCLE_MAX_STEP);
