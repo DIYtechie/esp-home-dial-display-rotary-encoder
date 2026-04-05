@@ -14,19 +14,19 @@ static const uint32_t STEP_PUBLISH_INTERVAL_MS = 10;
 static const uint32_t FAST_STEP_PUBLISH_INTERVAL_MS = 5;
 static const uint32_t DIRECTION_CONFIRMATION_WINDOW_MS = 180;
 static const uint32_t DIRECTION_MEMORY_TIMEOUT_MS = 700;
-static const uint32_t FASTEST_SPEED_THRESHOLD_MS = 180;
-static const uint32_t FAST_SPEED_THRESHOLD_MS = 180;
-static const uint32_t MEDIUM_SPEED_THRESHOLD_MS = 300;
-static const uint32_t SLOW_MEDIUM_SPEED_THRESHOLD_MS = 300;
-static const int32_t FASTEST_VALUE_STEP = 10;
-static const int32_t FAST_VALUE_STEP = 10;
-static const int32_t MEDIUM_VALUE_STEP = 5;
+static const uint32_t FASTEST_SPEED_THRESHOLD_MS = 25;
+static const uint32_t FAST_SPEED_THRESHOLD_MS = 45;
+static const uint32_t MEDIUM_SPEED_THRESHOLD_MS = 70;
+static const uint32_t SLOW_MEDIUM_SPEED_THRESHOLD_MS = 120;
+static const int32_t FASTEST_VALUE_STEP = 1;
+static const int32_t FAST_VALUE_STEP = 1;
+static const int32_t MEDIUM_VALUE_STEP = 1;
 static const int32_t SLOW_MEDIUM_VALUE_STEP = 1;
 static const int32_t SLOW_VALUE_STEP = 1;
 static const uint8_t NORMAL_REVERSE_CONFIRMATION_COUNT = 2;
-static const uint8_t HIGH_SPEED_REVERSE_CONFIRMATION_COUNT = 4;
-static const int32_t NORMAL_REVERSE_CONFIRMATION_MAGNITUDE = 2;
-static const int32_t HIGH_SPEED_REVERSE_CONFIRMATION_MAGNITUDE = 6;
+static const uint8_t HIGH_SPEED_REVERSE_CONFIRMATION_COUNT = 3;
+static const int32_t NORMAL_REVERSE_CONFIRMATION_MAGNITUDE = 3;
+static const int32_t HIGH_SPEED_REVERSE_CONFIRMATION_MAGNITUDE = 4;
 
 enum PollState : uint8_t {
   POLL_STATE_CHECK = 0,
@@ -174,7 +174,8 @@ void VieweSmartRotaryEncoderSensor::loop() {
       time_since_value_change = now - this->last_value_change_ms_;
     }
 
-    const bool high_speed_context = time_since_value_change <= FAST_SPEED_THRESHOLD_MS;
+    const bool high_speed_context =
+        time_since_value_change <= FAST_SPEED_THRESHOLD_MS || pending_step_magnitude >= 4;
     const bool bypass_direction_confirmation = leaving_bound;
 
     if (direction_changed && !bypass_direction_confirmation) {
@@ -229,6 +230,8 @@ void VieweSmartRotaryEncoderSensor::loop() {
     this->value_ = clamp(this->value_ + direction * value_step_size, this->min_value_, this->max_value_);
 
     if (this->value_ != previous_value) {
+      ESP_LOGD(TAG, "step dt=%" PRIu32 "ms dir=%" PRId32 " step=%" PRId32 " value=%" PRId32 "->%" PRId32,
+               time_since_value_change, direction, value_step_size, previous_value, this->value_);
       if (DIAGNOSTIC_DECODER_MODE) {
         ESP_LOGD(TAG,
                  "accept pending=%" PRId32 " dir=%" PRId32 " step=%" PRId32 " value=%" PRId32 "->%" PRId32
