@@ -35,6 +35,15 @@ class VieweSmartRotaryEncoderSensor : public sensor::Sensor, public Component {
   void set_resolution(VieweSmartRotaryEncoderResolution resolution) { this->resolution_ = resolution; }
   void set_min_value(int32_t min_value) { this->min_value_ = min_value; }
   void set_max_value(int32_t max_value) { this->max_value_ = max_value; }
+  void set_max_step(int max_step) {
+    if (max_step < 1) {
+      this->max_step_ = 1;
+    } else if (max_step > 10) {
+      this->max_step_ = 10;
+    } else {
+      this->max_step_ = max_step;
+    }
+  }
   void set_publish_initial_value(bool publish_initial_value) { this->publish_initial_value_ = publish_initial_value; }
   void set_value(int value);
 
@@ -73,6 +82,7 @@ class VieweSmartRotaryEncoderSensor : public sensor::Sensor, public Component {
   int32_t last_published_{0};
   int32_t min_value_{INT32_MIN};
   int32_t max_value_{INT32_MAX};
+  int32_t max_step_{10};
   int32_t raw_count_total_{0};
   int32_t last_reported_step_count_{0};
   int32_t pending_step_delta_{0};
@@ -119,6 +129,17 @@ template<typename... Ts> class VieweSmartRotaryEncoderSetValueAction : public Ac
   TEMPLATABLE_VALUE(int, value)
 
   void play(const Ts &...x) override { this->encoder_->set_value(this->value_.value(x...)); }
+
+ protected:
+  VieweSmartRotaryEncoderSensor *encoder_;
+};
+
+template<typename... Ts> class VieweSmartRotaryEncoderSetMaxStepAction : public Action<Ts...> {
+ public:
+  explicit VieweSmartRotaryEncoderSetMaxStepAction(VieweSmartRotaryEncoderSensor *encoder) : encoder_(encoder) {}
+  TEMPLATABLE_VALUE(int, max_step)
+
+  void play(const Ts &...x) override { this->encoder_->set_max_step(this->max_step_.value(x...)); }
 
  protected:
   VieweSmartRotaryEncoderSensor *encoder_;

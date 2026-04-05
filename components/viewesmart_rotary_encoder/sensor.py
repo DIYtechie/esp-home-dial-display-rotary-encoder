@@ -38,12 +38,16 @@ CONF_PIN_RESET = "pin_reset"
 CONF_ON_CLOCKWISE = "on_clockwise"
 CONF_ON_ANTICLOCKWISE = "on_anticlockwise"
 CONF_PUBLISH_INITIAL_VALUE = "publish_initial_value"
+CONF_MAX_STEP = "max_step"
 
 VieweSmartRotaryEncoderSensor = viewesmart_rotary_encoder_ns.class_(
     "VieweSmartRotaryEncoderSensor", sensor.Sensor, cg.Component
 )
 VieweSmartRotaryEncoderSetValueAction = viewesmart_rotary_encoder_ns.class_(
     "VieweSmartRotaryEncoderSetValueAction", automation.Action
+)
+VieweSmartRotaryEncoderSetMaxStepAction = viewesmart_rotary_encoder_ns.class_(
+    "VieweSmartRotaryEncoderSetMaxStepAction", automation.Action
 )
 
 
@@ -73,6 +77,7 @@ CONFIG_SCHEMA = cv.All(
             cv.Optional(CONF_RESOLUTION, default=1): cv.enum(RESOLUTIONS, int=True),
             cv.Optional(CONF_MIN_VALUE): cv.int_,
             cv.Optional(CONF_MAX_VALUE): cv.int_,
+            cv.Optional(CONF_MAX_STEP, default=10): cv.int_range(min=1, max=10),
             cv.Optional(CONF_PUBLISH_INITIAL_VALUE, default=False): cv.boolean,
             cv.Optional(CONF_RESTORE_MODE, default="RESTORE_DEFAULT_ZERO"): cv.enum(
                 RESTORE_MODES, upper=True, space="_"
@@ -105,6 +110,7 @@ async def to_code(config):
         cg.add(var.set_min_value(config[CONF_MIN_VALUE]))
     if CONF_MAX_VALUE in config:
         cg.add(var.set_max_value(config[CONF_MAX_VALUE]))
+    cg.add(var.set_max_step(config[CONF_MAX_STEP]))
 
     for conf in config.get(CONF_ON_CLOCKWISE, []):
         await automation.build_callback_automation(
@@ -134,4 +140,25 @@ async def sensor_viewesmart_rotary_encoder_set_value_to_code(
     var = cg.new_Pvariable(action_id, template_arg, parent)
     template_ = await cg.templatable(config[CONF_VALUE], args, int)
     cg.add(var.set_value(template_))
+    return var
+
+
+@automation.register_action(
+    "sensor.viewesmart_rotary_encoder.set_max_step",
+    VieweSmartRotaryEncoderSetMaxStepAction,
+    cv.Schema(
+        {
+            cv.Required(CONF_ID): cv.use_id(VieweSmartRotaryEncoderSensor),
+            cv.Required(CONF_MAX_STEP): cv.templatable(cv.int_range(min=1, max=10)),
+        }
+    ),
+    synchronous=True,
+)
+async def sensor_viewesmart_rotary_encoder_set_max_step_to_code(
+    config, action_id, template_arg, args
+):
+    parent = await cg.get_variable(config[CONF_ID])
+    var = cg.new_Pvariable(action_id, template_arg, parent)
+    template_ = await cg.templatable(config[CONF_MAX_STEP], args, int)
+    cg.add(var.set_max_step(template_))
     return var
