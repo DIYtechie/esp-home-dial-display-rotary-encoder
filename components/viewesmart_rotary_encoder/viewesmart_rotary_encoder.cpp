@@ -15,11 +15,11 @@ static const uint32_t FAST_STEP_PUBLISH_INTERVAL_MS = 5;
 static const uint32_t DIRECTION_CONFIRMATION_WINDOW_MS = 180;
 static const uint32_t DIRECTION_MEMORY_TIMEOUT_MS = 700;
 static const uint32_t FAST_REVERSE_FULL_CYCLE_THRESHOLD_MS = 220;
-static const uint32_t ACCELERATION_CONTEXT_TIMEOUT_MS = 600;
-static const uint32_t HALF_CYCLE_MIN_MS = 5;
+static const uint32_t ACCELERATION_CONTEXT_TIMEOUT_MS = 900;
+static const uint32_t HALF_CYCLE_MIN_MS = 15;
 static const uint32_t HALF_CYCLE_MAX_MS = 200;
 static const int32_t HALF_CYCLE_MIN_STEP = 1;
-static const int32_t HALF_CYCLE_MAX_STEP = 20;
+static const int32_t HALF_CYCLE_MAX_STEP = 12;
 
 enum PollState : uint8_t {
   POLL_STATE_CHECK = 0,
