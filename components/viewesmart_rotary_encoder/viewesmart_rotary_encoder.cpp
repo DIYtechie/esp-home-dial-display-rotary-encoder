@@ -16,9 +16,7 @@ static const uint32_t DIRECTION_CONFIRMATION_WINDOW_MS = 180;
 static const uint32_t DIRECTION_MEMORY_TIMEOUT_MS = 700;
 static const uint32_t FAST_REVERSE_FULL_CYCLE_THRESHOLD_MS = 220;
 static const uint32_t ENTRY_DELTA_MIN_MS = 40;
-static const uint32_t ENTRY_DELTA_FAST_MS = 180;
-static const uint32_t ENTRY_DELTA_MEDIUM_MS = 350;
-static const uint32_t ENTRY_DELTA_FIRST_EVENT_MS = 300;
+static const uint32_t ENTRY_DELTA_SLOW_MS = 700;
 static const uint32_t EXIT_DELTA_MIN_MS = 5;
 static const uint32_t EXIT_DELTA_MAX_MS = 200;
 
@@ -215,8 +213,6 @@ void VieweSmartRotaryEncoderSensor::loop() {
     int32_t step_size = this->step_size_from_phase_deltas_(this->last_entry_delta_ms_, this->last_exit_delta_ms_);
     const bool high_speed_context = speed_reference_ms != UINT32_MAX &&
                                     speed_reference_ms <= FAST_REVERSE_FULL_CYCLE_THRESHOLD_MS;
-    bool confirmed_fast_reverse = false;
-
     if (direction_changed) {
       const int32_t required_confirmation_magnitude =
           high_speed_context ? this->logical_steps_per_cycle_() : 1;
@@ -250,12 +246,12 @@ void VieweSmartRotaryEncoderSensor::loop() {
         this->last_step_publish_ms_ = now;
         return;
       }
-      confirmed_fast_reverse = high_speed_context;
     }
 
-    if (confirmed_fast_reverse) {
-      // Keep the confirming reverse step small; let later clean steps accelerate in the new direction.
-      step_size = std::min<int32_t>(step_size, 2);
+    if (direction_changed) {
+      // Keep accepted reverse steps conservative. Fine back-and-forth nudges should stay small,
+      // and fast reversals can build speed again on later clean steps in the new direction.
+      step_size = std::min<int32_t>(step_size, high_speed_context ? 2 : 1);
     }
 
     const int32_t previous_value = this->value_;
@@ -349,32 +345,35 @@ int VieweSmartRotaryEncoderSensor::step_size_from_phase_deltas_(uint32_t entry_d
     return 1;
   }
 
-  if (entry_delta_ms > ENTRY_DELTA_FIRST_EVENT_MS) {
-    return exit_delta_ms < 20 ? 2 : 1;
-  }
-
   const uint32_t clamped_entry_delta =
-      clamp<uint32_t>(entry_delta_ms, ENTRY_DELTA_MIN_MS, ENTRY_DELTA_FIRST_EVENT_MS);
+      clamp<uint32_t>(entry_delta_ms, ENTRY_DELTA_MIN_MS, ENTRY_DELTA_SLOW_MS);
   const uint32_t clamped_exit_delta =
       clamp<uint32_t>(exit_delta_ms, EXIT_DELTA_MIN_MS, EXIT_DELTA_MAX_MS);
-  const float normalized_entry = static_cast<float>(ENTRY_DELTA_FIRST_EVENT_MS - clamped_entry_delta) /
-                                 static_cast<float>(ENTRY_DELTA_FIRST_EVENT_MS - ENTRY_DELTA_MIN_MS);
+  const float normalized_entry = static_cast<float>(ENTRY_DELTA_SLOW_MS - clamped_entry_delta) /
+                                 static_cast<float>(ENTRY_DELTA_SLOW_MS - ENTRY_DELTA_MIN_MS);
   const float normalized_exit = static_cast<float>(EXIT_DELTA_MAX_MS - clamped_exit_delta) /
                                 static_cast<float>(EXIT_DELTA_MAX_MS - EXIT_DELTA_MIN_MS);
   const float weighted_speed = ((2.0f * normalized_entry) + normalized_exit) / 3.0f;
 
-  int32_t zone_max_step = 3;
-  if (entry_delta_ms <= ENTRY_DELTA_FAST_MS) {
-    zone_max_step = 10;
-  } else if (entry_delta_ms <= ENTRY_DELTA_MEDIUM_MS) {
-    zone_max_step = 6;
-  } else {
-    zone_max_step = 3;
+  if (weighted_speed <= 0.18f) {
+    return 1;
   }
 
-  const float curved = weighted_speed * weighted_speed * weighted_speed;
-  const float step_value = 1.0f + curved * static_cast<float>(zone_max_step - 1);
-  return clamp<int32_t>(static_cast<int32_t>(step_value + 0.5f), 1, zone_max_step);
+  if (weighted_speed <= 0.50f) {
+    const float mid = (weighted_speed - 0.18f) / (0.50f - 0.18f);
+    const float step_value = 1.0f + mid * 2.0f;  // Broad middle band: mostly 2-3 steps.
+    return clamp<int32_t>(static_cast<int32_t>(step_value + 0.5f), 1, 3);
+  }
+
+  if (weighted_speed <= 0.78f) {
+    const float fast = (weighted_speed - 0.50f) / (0.78f - 0.50f);
+    const float step_value = 3.0f + fast * 3.0f;
+    return clamp<int32_t>(static_cast<int32_t>(step_value + 0.5f), 3, 6);
+  }
+
+  const float very_fast = (weighted_speed - 0.78f) / (1.0f - 0.78f);
+  const float step_value = 6.0f + very_fast * 4.0f;
+  return clamp<int32_t>(static_cast<int32_t>(step_value + 0.5f), 6, 10);
 }
 
 int32_t VieweSmartRotaryEncoderSensor::poll_encoder_delta_() {
