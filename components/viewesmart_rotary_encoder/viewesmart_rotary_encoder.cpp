@@ -188,9 +188,12 @@ void VieweSmartRotaryEncoderSensor::loop() {
     this->value_ = clamp(this->value_ + direction, this->min_value_, this->max_value_);
 
     if (this->value_ != previous_value) {
-      ESP_LOGD(TAG, "step dt=%" PRIu32 "ms raw_dt=%" PRIu32 "ms dir=%" PRId32 " step=1 value=%" PRId32 "->%" PRId32,
+      ESP_LOGD(TAG,
+               "step dt=%" PRIu32 "ms raw_dt=%" PRIu32 "ms dir=%" PRId32
+               " step=1 value=%" PRId32 "->%" PRId32 " raw_edges=%" PRIu32 " raw_steps=%" PRIu32,
                time_since_value_change == UINT32_MAX ? 0 : time_since_value_change,
-               speed_reference_ms == UINT32_MAX ? 0 : speed_reference_ms, direction, previous_value, this->value_);
+               speed_reference_ms == UINT32_MAX ? 0 : speed_reference_ms, direction, previous_value, this->value_,
+               this->raw_edge_activity_since_emit_, this->raw_valid_steps_since_emit_);
       if (direction > 0) {
         this->on_clockwise_callback_.call();
       } else {
@@ -199,6 +202,8 @@ void VieweSmartRotaryEncoderSensor::loop() {
       changed = true;
       this->last_emitted_direction_ = direction;
       this->last_value_change_ms_ = now;
+      this->raw_edge_activity_since_emit_ = 0;
+      this->raw_valid_steps_since_emit_ = 0;
     }
 
     this->pending_direction_confirmation_ = 0;
@@ -227,6 +232,8 @@ void VieweSmartRotaryEncoderSensor::set_value(int value) {
   this->last_raw_transition_ms_ = 0;
   this->last_raw_step_interval_ms_ = UINT32_MAX;
   this->smoothed_raw_step_interval_ms_ = UINT32_MAX;
+  this->raw_edge_activity_since_emit_ = 0;
+  this->raw_valid_steps_since_emit_ = 0;
   this->last_emitted_direction_ = 0;
   this->pending_direction_confirmation_ = 0;
   this->pending_direction_confirmation_count_ = 0;
@@ -272,6 +279,7 @@ int32_t VieweSmartRotaryEncoderSensor::poll_encoder_delta_() {
     if (this->debounce_a_count_ >= POLL_DEBOUNCE_TICKS) {
       this->encoder_a_level_ = phase_a;
       this->encoder_a_change_ = true;
+      this->raw_edge_activity_since_emit_++;
       this->debounce_a_count_ = 0;
     }
   } else {
@@ -283,6 +291,7 @@ int32_t VieweSmartRotaryEncoderSensor::poll_encoder_delta_() {
     if (this->debounce_b_count_ >= POLL_DEBOUNCE_TICKS) {
       this->encoder_b_level_ = phase_b;
       this->encoder_b_change_ = true;
+      this->raw_edge_activity_since_emit_++;
       this->debounce_b_count_ = 0;
     }
   } else {
@@ -291,6 +300,7 @@ int32_t VieweSmartRotaryEncoderSensor::poll_encoder_delta_() {
 
   const int32_t step_delta = this->resolution_divider_();
   auto log_raw_step = [&](int32_t delta) -> int32_t {
+    this->raw_valid_steps_since_emit_++;
     uint32_t raw_dt = UINT32_MAX;
     if (this->last_raw_transition_ms_ != 0) {
       raw_dt = now - this->last_raw_transition_ms_;
