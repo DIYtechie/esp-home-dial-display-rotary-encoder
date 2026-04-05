@@ -16,7 +16,7 @@ static const uint32_t DIRECTION_CONFIRMATION_WINDOW_MS = 180;
 static const uint32_t DIRECTION_MEMORY_TIMEOUT_MS = 700;
 static const uint32_t FAST_REVERSE_FULL_CYCLE_THRESHOLD_MS = 220;
 static const uint32_t HALF_CYCLE_MIN_MS = 5;
-static const uint32_t HALF_CYCLE_MAX_MS = 200;
+static const uint32_t HALF_CYCLE_MAX_MS = 400;
 static const int32_t HALF_CYCLE_MIN_STEP = 1;
 static const int32_t HALF_CYCLE_MAX_STEP = 20;
 
