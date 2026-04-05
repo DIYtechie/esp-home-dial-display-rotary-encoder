@@ -120,6 +120,7 @@ void VieweSmartRotaryEncoderSensor::dump_config() {
   ESP_LOGCONFIG(TAG, "  Direction Memory Timeout: %" PRIu32 " ms", DIRECTION_MEMORY_TIMEOUT_MS);
   ESP_LOGCONFIG(TAG, "  Reverse Confirmation: slow=half step, fast=full cycle (%d logical steps)",
                 this->logical_steps_per_cycle_());
+  ESP_LOGCONFIG(TAG, "  Max Step: %" PRId32, this->max_step_);
   ESP_LOGCONFIG(TAG, "  Min Value: %" PRId32, this->min_value_);
   ESP_LOGCONFIG(TAG, "  Max Value: %" PRId32, this->max_value_);
 
@@ -211,6 +212,7 @@ void VieweSmartRotaryEncoderSensor::loop() {
       return;
     }
     int32_t step_size = this->step_size_from_phase_deltas_(this->last_entry_delta_ms_, this->last_exit_delta_ms_);
+    step_size = std::min(step_size, this->max_step_);
     const bool high_speed_context = speed_reference_ms != UINT32_MAX &&
                                     speed_reference_ms <= FAST_REVERSE_FULL_CYCLE_THRESHOLD_MS;
     if (direction_changed) {
