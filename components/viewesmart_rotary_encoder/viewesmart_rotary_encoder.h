@@ -90,6 +90,8 @@ class VieweSmartRotaryEncoderSensor : public sensor::Sensor, public Component {
   uint32_t last_phase_transition_ms_{0};
   uint8_t last_phase_state_{0};
   uint32_t last_valid_half_cycle_interval_ms_{UINT32_MAX};
+  uint32_t pending_half_cycle_interval_ms_{0};
+  uint8_t pending_half_cycle_transitions_{0};
   uint8_t debounce_a_count_{0};
   uint8_t debounce_b_count_{0};
   bool encoder_a_change_{false};
