@@ -81,6 +81,8 @@ void VieweSmartRotaryEncoderSensor::setup() {
   this->last_raw_step_interval_ms_ = UINT32_MAX;
   this->smoothed_raw_step_interval_ms_ = UINT32_MAX;
   this->last_valid_half_cycle_interval_ms_ = UINT32_MAX;
+  this->pending_half_cycle_interval_ms_ = 0;
+  this->pending_half_cycle_transitions_ = 0;
 
   this->pin_a_->setup();
   this->pin_b_->setup();
@@ -272,6 +274,8 @@ void VieweSmartRotaryEncoderSensor::set_value(int value) {
   this->smoothed_raw_step_interval_ms_ = UINT32_MAX;
   this->last_phase_transition_ms_ = 0;
   this->last_valid_half_cycle_interval_ms_ = UINT32_MAX;
+  this->pending_half_cycle_interval_ms_ = 0;
+  this->pending_half_cycle_transitions_ = 0;
   this->last_emitted_direction_ = 0;
   this->pending_direction_confirmation_ = 0;
   this->pending_direction_confirmation_count_ = 0;
@@ -357,18 +361,32 @@ int32_t VieweSmartRotaryEncoderSensor::poll_encoder_delta_() {
         this->last_phase_transition_ms_ == 0 ? 0 : (now - this->last_phase_transition_ms_);
     const int8_t half_cycle_direction = phase_transition_direction(this->last_phase_state_, next_phase_state);
     if (half_cycle_direction != 0 && phase_dt != 0) {
-      this->last_valid_half_cycle_interval_ms_ = phase_dt;
+      this->pending_half_cycle_interval_ms_ += phase_dt;
+      if (this->pending_half_cycle_transitions_ < UINT8_MAX) {
+        this->pending_half_cycle_transitions_++;
+      }
+    } else if (half_cycle_direction == 0) {
+      this->pending_half_cycle_interval_ms_ = 0;
+      this->pending_half_cycle_transitions_ = 0;
     }
 
-    ESP_LOGD(TAG, "phase dt=%" PRIu32 "ms prev=%u%u next=%u%u dir=%" PRId8 " step=%" PRId32, phase_dt,
+    ESP_LOGD(TAG, "phase dt=%" PRIu32 "ms prev=%u%u next=%u%u dir=%" PRId8 " sum=%" PRIu32 "ms n=%u step=%" PRId32,
+             phase_dt,
              (this->last_phase_state_ >> 1) & 0x1, this->last_phase_state_ & 0x1, (next_phase_state >> 1) & 0x1,
-             next_phase_state & 0x1, half_cycle_direction, this->step_size_from_half_cycle_timing_());
+             next_phase_state & 0x1, half_cycle_direction, this->pending_half_cycle_interval_ms_,
+             this->pending_half_cycle_transitions_, this->step_size_from_half_cycle_timing_());
     this->last_phase_state_ = next_phase_state;
     this->last_phase_transition_ms_ = now;
   }
 
   const int32_t step_delta = this->resolution_divider_();
   auto log_raw_step = [&](int32_t delta) -> int32_t {
+    if (this->pending_half_cycle_transitions_ > 0) {
+      this->last_valid_half_cycle_interval_ms_ = this->pending_half_cycle_interval_ms_;
+    }
+    this->pending_half_cycle_interval_ms_ = 0;
+    this->pending_half_cycle_transitions_ = 0;
+
     uint32_t raw_dt = UINT32_MAX;
     if (this->last_raw_transition_ms_ != 0) {
       raw_dt = now - this->last_raw_transition_ms_;
