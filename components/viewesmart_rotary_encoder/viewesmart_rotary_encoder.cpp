@@ -19,6 +19,7 @@ static const uint32_t FAST_SPEED_THRESHOLD_MS = 45;
 static const uint32_t MEDIUM_SPEED_THRESHOLD_MS = 120;
 static const uint32_t SLOW_MEDIUM_SPEED_THRESHOLD_MS = 180;
 static const uint32_t FAST_REVERSE_FULL_CYCLE_THRESHOLD_MS = 220;
+static const uint32_t RAW_TRANSITION_DEBOUNCE_MS = 5;
 static const int32_t FASTEST_VALUE_STEP = 1;
 static const int32_t FAST_VALUE_STEP = 1;
 static const int32_t MEDIUM_VALUE_STEP = 1;
@@ -118,6 +119,7 @@ void VieweSmartRotaryEncoderSensor::dump_config() {
   ESP_LOGCONFIG(TAG, "  Direction Memory Timeout: %" PRIu32 " ms", DIRECTION_MEMORY_TIMEOUT_MS);
   ESP_LOGCONFIG(TAG, "  Slow Reverse Accept: disabled");
   ESP_LOGCONFIG(TAG, "  Fast Reverse Full Cycle Threshold: %" PRIu32 " ms", FAST_REVERSE_FULL_CYCLE_THRESHOLD_MS);
+  ESP_LOGCONFIG(TAG, "  Raw Transition Debounce: %" PRIu32 " ms", RAW_TRANSITION_DEBOUNCE_MS);
   ESP_LOGCONFIG(TAG, "  Speed Thresholds: slow_medium=%" PRIu32 ", medium=%" PRIu32 ", fast=%" PRIu32
                      ", fastest=%" PRIu32 " ms",
                 SLOW_MEDIUM_SPEED_THRESHOLD_MS, MEDIUM_SPEED_THRESHOLD_MS, FAST_SPEED_THRESHOLD_MS,
@@ -375,6 +377,12 @@ int32_t VieweSmartRotaryEncoderSensor::poll_encoder_delta_() {
     const uint32_t logged_raw_dt = raw_dt == UINT32_MAX ? 0 : raw_dt;
     const uint32_t logged_avg_dt =
         this->smoothed_raw_step_interval_ms_ == UINT32_MAX ? 0 : this->smoothed_raw_step_interval_ms_;
+
+    if (raw_dt != UINT32_MAX && raw_dt < RAW_TRANSITION_DEBOUNCE_MS) {
+      ESP_LOGD(TAG, "raw_bounce dt=%" PRIu32 "ms avg=%" PRIu32 "ms prev=%u next=%u overflow=%" PRIu32,
+               logged_raw_dt, logged_avg_dt, this->last_ab_state_, state, this->isr_overflow_count_);
+      continue;
+    }
 
     if (delta == 0) {
       ESP_LOGD(TAG, "raw_invalid dt=%" PRIu32 "ms avg=%" PRIu32 "ms prev=%u next=%u overflow=%" PRIu32,
