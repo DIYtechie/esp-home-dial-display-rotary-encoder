@@ -358,28 +358,28 @@ int VieweSmartRotaryEncoderSensor::step_size_from_phase_deltas_(uint32_t entry_d
   const float normalized_exit = static_cast<float>(EXIT_DELTA_MAX_MS - clamped_exit_delta) /
                                 static_cast<float>(EXIT_DELTA_MAX_MS - EXIT_DELTA_MIN_MS);
   if (this->acceleration_mode_ == VIEWESMART_ROTARY_ENCODER_ACCELERATION_LOW) {
-    const float weighted_speed = ((5.0f * normalized_entry) + normalized_exit) / 6.0f;
+    const float weighted_speed = ((6.0f * normalized_entry) + normalized_exit) / 7.0f;
 
-    if (weighted_speed <= 0.65f) {
+    if (weighted_speed <= 0.82f) {
       return 1;
     }
 
-    if (weighted_speed <= 0.94f) {
-      const float low_mid = (weighted_speed - 0.65f) / (0.94f - 0.65f);
+    if (weighted_speed <= 0.975f) {
+      const float low_mid = (weighted_speed - 0.82f) / (0.975f - 0.82f);
       const float step_value = 1.0f + low_mid;
       return clamp<int32_t>(static_cast<int32_t>(step_value + 0.5f), 1, 2);
     }
 
-    if (weighted_speed <= 0.985f) {
-      const float mid = (weighted_speed - 0.94f) / (0.985f - 0.94f);
+    if (weighted_speed <= 0.995f) {
+      const float mid = (weighted_speed - 0.975f) / (0.995f - 0.975f);
       const float step_value = 2.0f + mid;
       return clamp<int32_t>(static_cast<int32_t>(step_value + 0.5f), 2, 3);
     }
 
-    if (weighted_speed <= 0.998f) {
-      const float fast = (weighted_speed - 0.985f) / (0.998f - 0.985f);
-      const float step_value = 3.0f + fast * 2.0f;
-      return clamp<int32_t>(static_cast<int32_t>(step_value + 0.5f), 3, 5);
+    if (weighted_speed <= 0.9995f) {
+      const float fast = (weighted_speed - 0.995f) / (0.9995f - 0.995f);
+      const float step_value = 3.0f + fast;
+      return clamp<int32_t>(static_cast<int32_t>(step_value + 0.5f), 3, 4);
     }
 
     return 5;
