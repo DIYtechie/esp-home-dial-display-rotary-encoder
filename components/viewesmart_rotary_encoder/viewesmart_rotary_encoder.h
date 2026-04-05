@@ -75,6 +75,8 @@ class VieweSmartRotaryEncoderSensor : public sensor::Sensor, public Component {
   int32_t raw_count_total_{0};
   int32_t last_reported_step_count_{0};
   int32_t pending_step_delta_{0};
+  int8_t pending_half_direction_{0};
+  uint8_t pending_half_count_{0};
   uint32_t last_step_publish_ms_{0};
   uint32_t last_value_change_ms_{0};
   int8_t last_emitted_direction_{0};
