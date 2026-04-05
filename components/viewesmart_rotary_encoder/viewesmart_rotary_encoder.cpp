@@ -50,6 +50,8 @@ void VieweSmartRotaryEncoderSensor::setup() {
   this->last_published_ = this->value_;
   this->last_step_publish_ms_ = millis();
   this->last_value_change_ms_ = 0;
+  this->pending_half_direction_ = 0;
+  this->pending_half_count_ = 0;
   this->last_poll_ms_ = millis();
   this->last_raw_transition_ms_ = 0;
   this->last_raw_step_interval_ms_ = UINT32_MAX;
@@ -272,6 +274,8 @@ void VieweSmartRotaryEncoderSensor::set_value(int value) {
   this->raw_count_total_ = 0;
   this->last_reported_step_count_ = 0;
   this->pending_step_delta_ = 0;
+  this->pending_half_direction_ = 0;
+  this->pending_half_count_ = 0;
   this->last_step_publish_ms_ = millis();
   this->last_value_change_ms_ = 0;
   this->last_raw_transition_ms_ = 0;
@@ -340,7 +344,7 @@ int32_t VieweSmartRotaryEncoderSensor::poll_encoder_delta_() {
   }
 
   const int32_t step_delta = this->resolution_divider_();
-  auto log_raw_step = [&](int32_t delta) -> int32_t {
+  auto log_raw_observation = [&](const char *label, int32_t delta) {
     uint32_t raw_dt = UINT32_MAX;
     if (this->last_raw_transition_ms_ != 0) {
       raw_dt = now - this->last_raw_transition_ms_;
@@ -353,11 +357,42 @@ int32_t VieweSmartRotaryEncoderSensor::poll_encoder_delta_() {
     }
     this->last_raw_transition_ms_ = now;
     const uint32_t logged_raw_dt = raw_dt == UINT32_MAX ? 0 : raw_dt;
-    const uint32_t logged_avg_dt = this->smoothed_raw_step_interval_ms_ == UINT32_MAX ? 0 : this->smoothed_raw_step_interval_ms_;
+    const uint32_t logged_avg_dt =
+        this->smoothed_raw_step_interval_ms_ == UINT32_MAX ? 0 : this->smoothed_raw_step_interval_ms_;
     ESP_LOGD(TAG,
-             "raw_step dt=%" PRIu32 "ms avg=%" PRIu32 "ms delta=%" PRId32 " a=%d b=%d state=%u",
-             logged_raw_dt, logged_avg_dt, delta, this->encoder_a_level_, this->encoder_b_level_, this->poll_state_);
-    return delta;
+             "%s dt=%" PRIu32 "ms avg=%" PRIu32 "ms delta=%" PRId32 " a=%d b=%d state=%u pending_dir=%" PRId8
+             " pending_halves=%u",
+             label, logged_raw_dt, logged_avg_dt, delta, this->encoder_a_level_, this->encoder_b_level_,
+             this->poll_state_, this->pending_half_direction_, this->pending_half_count_);
+  };
+
+  auto process_half_step = [&](int32_t delta) -> int32_t {
+    const int8_t direction = delta > 0 ? 1 : -1;
+    log_raw_observation("raw_half", delta);
+
+    if (this->pending_half_count_ == 0) {
+      this->pending_half_direction_ = direction;
+      this->pending_half_count_ = 1;
+      ESP_LOGD(TAG, "half_start dir=%" PRId8, direction);
+      return 0;
+    }
+
+    if (this->pending_half_direction_ == direction) {
+      this->pending_half_count_++;
+      if (this->pending_half_count_ >= 2) {
+        this->pending_half_direction_ = 0;
+        this->pending_half_count_ = 0;
+        ESP_LOGD(TAG, "half_match dir=%" PRId8 " emit=%" PRId32, direction, delta);
+        return delta;
+      }
+      ESP_LOGD(TAG, "half_continue dir=%" PRId8 " halves=%u", direction, this->pending_half_count_);
+      return 0;
+    }
+
+    ESP_LOGD(TAG, "half_restart old_dir=%" PRId8 " new_dir=%" PRId8, this->pending_half_direction_, direction);
+    this->pending_half_direction_ = direction;
+    this->pending_half_count_ = 1;
+    return 0;
   };
 
   switch (this->poll_state_) {
@@ -375,7 +410,7 @@ int32_t VieweSmartRotaryEncoderSensor::poll_encoder_delta_() {
       if (this->encoder_b_change_) {
         this->encoder_b_change_ = false;
         this->poll_state_ = POLL_STATE_READY;
-        return log_raw_step(-step_delta);
+        return process_half_step(-step_delta);
       }
       if (this->encoder_a_change_) {
         this->encoder_a_change_ = false;
@@ -387,7 +422,7 @@ int32_t VieweSmartRotaryEncoderSensor::poll_encoder_delta_() {
       if (this->encoder_a_change_) {
         this->encoder_a_change_ = false;
         this->poll_state_ = POLL_STATE_READY;
-        return log_raw_step(step_delta);
+        return process_half_step(step_delta);
       }
       if (this->encoder_b_change_) {
         this->encoder_b_change_ = false;
