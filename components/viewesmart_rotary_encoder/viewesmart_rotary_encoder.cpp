@@ -25,12 +25,28 @@ static const int32_t MEDIUM_VALUE_STEP = 1;
 static const int32_t SLOW_MEDIUM_VALUE_STEP = 1;
 static const int32_t SLOW_VALUE_STEP = 1;
 
-enum PollState : uint8_t {
-  POLL_STATE_CHECK = 0,
-  POLL_STATE_READY = 1,
-  POLL_STATE_PHASE_A = 2,
-  POLL_STATE_PHASE_B = 3,
+static const int8_t QUADRATURE_TRANSITIONS[16] = {
+    0, 1, -1, 0,
+    -1, 0, 0, 1,
+    1, 0, 0, -1,
+    0, -1, 1, 0,
 };
+
+#ifdef USE_ESP_IDF
+void IRAM_ATTR VieweSmartRotaryEncoderSensor::gpio_isr_(void *arg) {
+  auto *self = static_cast<VieweSmartRotaryEncoderSensor *>(arg);
+  const uint8_t next_head = (self->isr_queue_head_ + 1) % ISR_QUEUE_SIZE;
+  if (next_head == self->isr_queue_tail_) {
+    self->isr_overflow_count_++;
+    return;
+  }
+
+  const bool phase_a = gpio_get_level(static_cast<gpio_num_t>(self->pin_a_gpio_)) != 0;
+  const bool phase_b = gpio_get_level(static_cast<gpio_num_t>(self->pin_b_gpio_)) != 0;
+  self->isr_queue_[self->isr_queue_head_] = (static_cast<uint8_t>(phase_a) << 1) | static_cast<uint8_t>(phase_b);
+  self->isr_queue_head_ = next_head;
+}
+#endif
 
 void VieweSmartRotaryEncoderSensor::setup() {
   int32_t initial_value = 0;
@@ -50,8 +66,6 @@ void VieweSmartRotaryEncoderSensor::setup() {
   this->last_published_ = this->value_;
   this->last_step_publish_ms_ = millis();
   this->last_value_change_ms_ = 0;
-  this->pending_half_direction_ = 0;
-  this->pending_half_count_ = 0;
   this->last_poll_ms_ = millis();
   this->last_raw_transition_ms_ = 0;
   this->last_raw_step_interval_ms_ = UINT32_MAX;
@@ -66,7 +80,21 @@ void VieweSmartRotaryEncoderSensor::setup() {
 
   this->encoder_a_level_ = this->pin_a_->digital_read();
   this->encoder_b_level_ = this->pin_b_->digital_read();
-  this->poll_state_ = this->encoder_a_level_ == this->encoder_b_level_ ? POLL_STATE_READY : POLL_STATE_CHECK;
+  this->last_ab_state_ = (static_cast<uint8_t>(this->encoder_a_level_) << 1) | static_cast<uint8_t>(this->encoder_b_level_);
+#ifdef USE_ESP_IDF
+  this->pin_a_gpio_ = this->pin_a_->get_pin();
+  this->pin_b_gpio_ = this->pin_b_->get_pin();
+  const esp_err_t isr_install_result = gpio_install_isr_service(0);
+  if (isr_install_result != ESP_OK && isr_install_result != ESP_ERR_INVALID_STATE) {
+    ESP_LOGE(TAG, "Failed to install GPIO ISR service: %s", esp_err_to_name(isr_install_result));
+    this->mark_failed();
+    return;
+  }
+  gpio_set_intr_type(static_cast<gpio_num_t>(this->pin_a_gpio_), GPIO_INTR_ANYEDGE);
+  gpio_set_intr_type(static_cast<gpio_num_t>(this->pin_b_gpio_), GPIO_INTR_ANYEDGE);
+  gpio_isr_handler_add(static_cast<gpio_num_t>(this->pin_a_gpio_), gpio_isr_, this);
+  gpio_isr_handler_add(static_cast<gpio_num_t>(this->pin_b_gpio_), gpio_isr_, this);
+#endif
   this->pcnt_initialized_ = true;
 
   if (this->publish_initial_value_) {
@@ -80,9 +108,9 @@ void VieweSmartRotaryEncoderSensor::dump_config() {
   LOG_PIN("  Pin A: ", this->pin_a_);
   LOG_PIN("  Pin B: ", this->pin_b_);
   LOG_PIN("  Reset Pin: ", this->pin_reset_);
-  ESP_LOGCONFIG(TAG, "  Decoder: polled phase state machine");
+  ESP_LOGCONFIG(TAG, "  Decoder: interrupt-driven quadrature state decoder");
   ESP_LOGCONFIG(TAG, "  Diagnostic Decoder Mode: %s", YESNO(DIAGNOSTIC_DECODER_MODE));
-  ESP_LOGCONFIG(TAG, "  Poll Interval: %" PRIu32 " ms", POLL_INTERVAL_MS);
+  ESP_LOGCONFIG(TAG, "  Poll Interval: %" PRIu32 " ms (idle only)", POLL_INTERVAL_MS);
   ESP_LOGCONFIG(TAG, "  Debounce: %u ticks", POLL_DEBOUNCE_TICKS);
   ESP_LOGCONFIG(TAG, "  Step Publish Interval: %" PRIu32 " ms", STEP_PUBLISH_INTERVAL_MS);
   ESP_LOGCONFIG(TAG, "  Fast Step Publish Interval: %" PRIu32 " ms", FAST_STEP_PUBLISH_INTERVAL_MS);
@@ -274,8 +302,6 @@ void VieweSmartRotaryEncoderSensor::set_value(int value) {
   this->raw_count_total_ = 0;
   this->last_reported_step_count_ = 0;
   this->pending_step_delta_ = 0;
-  this->pending_half_direction_ = 0;
-  this->pending_half_count_ = 0;
   this->last_step_publish_ms_ = millis();
   this->last_value_change_ms_ = 0;
   this->last_raw_transition_ms_ = 0;
@@ -286,13 +312,14 @@ void VieweSmartRotaryEncoderSensor::set_value(int value) {
   this->pending_direction_confirmation_count_ = 0;
   this->pending_direction_confirmation_magnitude_ = 0;
   this->pending_direction_confirmation_ms_ = 0;
-  this->debounce_a_count_ = 0;
-  this->debounce_b_count_ = 0;
-  this->encoder_a_change_ = false;
-  this->encoder_b_change_ = false;
   this->encoder_a_level_ = this->pin_a_->digital_read();
   this->encoder_b_level_ = this->pin_b_->digital_read();
-  this->poll_state_ = this->encoder_a_level_ == this->encoder_b_level_ ? POLL_STATE_READY : POLL_STATE_CHECK;
+  this->last_ab_state_ = (static_cast<uint8_t>(this->encoder_a_level_) << 1) | static_cast<uint8_t>(this->encoder_b_level_);
+#ifdef USE_ESP_IDF
+  this->isr_queue_head_ = 0;
+  this->isr_queue_tail_ = 0;
+  this->isr_overflow_count_ = 0;
+#endif
   this->value_ = clamp<int32_t>(value, this->min_value_, this->max_value_);
   this->pending_publish_ = true;
 }
@@ -312,39 +339,27 @@ int VieweSmartRotaryEncoderSensor::resolution_divider_() const {
 int VieweSmartRotaryEncoderSensor::logical_steps_per_cycle_() const { return 4 / this->resolution_divider_(); }
 
 int32_t VieweSmartRotaryEncoderSensor::poll_encoder_delta_() {
-  const uint32_t now = millis();
-  if ((now - this->last_poll_ms_) < POLL_INTERVAL_MS) {
+  if ((millis() - this->last_poll_ms_) < POLL_INTERVAL_MS) {
     return 0;
   }
-  this->last_poll_ms_ = now;
+  this->last_poll_ms_ = millis();
 
-  const bool phase_a = this->pin_a_->digital_read();
-  const bool phase_b = this->pin_b_->digital_read();
+#ifndef USE_ESP_IDF
+  return 0;
+#else
+  int32_t total_delta = 0;
 
-  if (phase_a != this->encoder_a_level_) {
-    this->debounce_a_count_++;
-    if (this->debounce_a_count_ >= POLL_DEBOUNCE_TICKS) {
-      this->encoder_a_level_ = phase_a;
-      this->encoder_a_change_ = true;
-      this->debounce_a_count_ = 0;
+  while (this->isr_queue_tail_ != this->isr_queue_head_) {
+    const uint8_t state = this->isr_queue_[this->isr_queue_tail_];
+    this->isr_queue_tail_ = (this->isr_queue_tail_ + 1) % ISR_QUEUE_SIZE;
+
+    if (state == this->last_ab_state_) {
+      continue;
     }
-  } else {
-    this->debounce_a_count_ = 0;
-  }
 
-  if (phase_b != this->encoder_b_level_) {
-    this->debounce_b_count_++;
-    if (this->debounce_b_count_ >= POLL_DEBOUNCE_TICKS) {
-      this->encoder_b_level_ = phase_b;
-      this->encoder_b_change_ = true;
-      this->debounce_b_count_ = 0;
-    }
-  } else {
-    this->debounce_b_count_ = 0;
-  }
-
-  const int32_t step_delta = this->resolution_divider_();
-  auto log_raw_observation = [&](const char *label, int32_t delta) {
+    const uint8_t transition = (this->last_ab_state_ << 2) | state;
+    const int8_t delta = QUADRATURE_TRANSITIONS[transition];
+    const uint32_t now = millis();
     uint32_t raw_dt = UINT32_MAX;
     if (this->last_raw_transition_ms_ != 0) {
       raw_dt = now - this->last_raw_transition_ms_;
@@ -356,91 +371,26 @@ int32_t VieweSmartRotaryEncoderSensor::poll_encoder_delta_() {
       }
     }
     this->last_raw_transition_ms_ = now;
+
     const uint32_t logged_raw_dt = raw_dt == UINT32_MAX ? 0 : raw_dt;
     const uint32_t logged_avg_dt =
         this->smoothed_raw_step_interval_ms_ == UINT32_MAX ? 0 : this->smoothed_raw_step_interval_ms_;
-    ESP_LOGD(TAG,
-             "%s dt=%" PRIu32 "ms avg=%" PRIu32 "ms delta=%" PRId32 " a=%d b=%d state=%u pending_dir=%" PRId8
-             " pending_halves=%u",
-             label, logged_raw_dt, logged_avg_dt, delta, this->encoder_a_level_, this->encoder_b_level_,
-             this->poll_state_, this->pending_half_direction_, this->pending_half_count_);
-  };
 
-  auto process_half_step = [&](int32_t delta) -> int32_t {
-    const int8_t direction = delta > 0 ? 1 : -1;
-    log_raw_observation("raw_half", delta);
-
-    if (this->pending_half_count_ == 0) {
-      this->pending_half_direction_ = direction;
-      this->pending_half_count_ = 1;
-      ESP_LOGD(TAG, "half_start dir=%" PRId8, direction);
-      return 0;
+    if (delta == 0) {
+      ESP_LOGD(TAG, "raw_invalid dt=%" PRIu32 "ms avg=%" PRIu32 "ms prev=%u next=%u overflow=%" PRIu32,
+               logged_raw_dt, logged_avg_dt, this->last_ab_state_, state, this->isr_overflow_count_);
+      this->last_ab_state_ = state;
+      continue;
     }
 
-    if (this->pending_half_direction_ == direction) {
-      this->pending_half_count_++;
-      if (this->pending_half_count_ >= 2) {
-        this->pending_half_direction_ = 0;
-        this->pending_half_count_ = 0;
-        ESP_LOGD(TAG, "half_match dir=%" PRId8 " emit=%" PRId32, direction, delta);
-        return delta;
-      }
-      ESP_LOGD(TAG, "half_continue dir=%" PRId8 " halves=%u", direction, this->pending_half_count_);
-      return 0;
-    }
-
-    ESP_LOGD(TAG, "half_restart old_dir=%" PRId8 " new_dir=%" PRId8, this->pending_half_direction_, direction);
-    this->pending_half_direction_ = direction;
-    this->pending_half_count_ = 1;
-    return 0;
-  };
-
-  switch (this->poll_state_) {
-    case POLL_STATE_READY:
-      if (this->encoder_a_change_) {
-        this->encoder_a_change_ = false;
-        this->poll_state_ = POLL_STATE_PHASE_A;
-      } else if (this->encoder_b_change_) {
-        this->encoder_b_change_ = false;
-        this->poll_state_ = POLL_STATE_PHASE_B;
-      }
-      break;
-
-    case POLL_STATE_PHASE_A:
-      if (this->encoder_b_change_) {
-        this->encoder_b_change_ = false;
-        this->poll_state_ = POLL_STATE_READY;
-        return process_half_step(-step_delta);
-      }
-      if (this->encoder_a_change_) {
-        this->encoder_a_change_ = false;
-        this->poll_state_ = POLL_STATE_READY;
-      }
-      break;
-
-    case POLL_STATE_PHASE_B:
-      if (this->encoder_a_change_) {
-        this->encoder_a_change_ = false;
-        this->poll_state_ = POLL_STATE_READY;
-        return process_half_step(step_delta);
-      }
-      if (this->encoder_b_change_) {
-        this->encoder_b_change_ = false;
-        this->poll_state_ = POLL_STATE_READY;
-      }
-      break;
-
-    case POLL_STATE_CHECK:
-    default:
-      if (this->encoder_a_level_ == this->encoder_b_level_) {
-        this->poll_state_ = POLL_STATE_READY;
-        this->encoder_a_change_ = false;
-        this->encoder_b_change_ = false;
-      }
-      break;
+    ESP_LOGD(TAG, "raw_step dt=%" PRIu32 "ms avg=%" PRIu32 "ms delta=%" PRId8 " prev=%u next=%u overflow=%" PRIu32,
+             logged_raw_dt, logged_avg_dt, delta, this->last_ab_state_, state, this->isr_overflow_count_);
+    this->last_ab_state_ = state;
+    total_delta += delta;
   }
 
-  return 0;
+  return total_delta;
+#endif
 }
 
 void VieweSmartRotaryEncoderSensor::publish_value_(bool force) {
