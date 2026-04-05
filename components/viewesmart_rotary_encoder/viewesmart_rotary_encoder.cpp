@@ -361,10 +361,12 @@ int32_t VieweSmartRotaryEncoderSensor::poll_encoder_delta_() {
         this->last_phase_transition_ms_ == 0 ? 0 : (now - this->last_phase_transition_ms_);
     const int8_t half_cycle_direction = phase_transition_direction(this->last_phase_state_, next_phase_state);
     if (half_cycle_direction != 0 && phase_dt != 0) {
-      this->pending_half_cycle_interval_ms_ += phase_dt;
-      if (this->pending_half_cycle_transitions_ < UINT8_MAX) {
-        this->pending_half_cycle_transitions_++;
+      if (this->pending_half_cycle_transitions_ >= 2) {
+        this->pending_half_cycle_interval_ms_ = 0;
+        this->pending_half_cycle_transitions_ = 0;
       }
+      this->pending_half_cycle_interval_ms_ += phase_dt;
+      this->pending_half_cycle_transitions_++;
     } else if (half_cycle_direction == 0) {
       this->pending_half_cycle_interval_ms_ = 0;
       this->pending_half_cycle_transitions_ = 0;
@@ -381,7 +383,7 @@ int32_t VieweSmartRotaryEncoderSensor::poll_encoder_delta_() {
 
   const int32_t step_delta = this->resolution_divider_();
   auto log_raw_step = [&](int32_t delta) -> int32_t {
-    if (this->pending_half_cycle_transitions_ > 0) {
+    if (this->pending_half_cycle_transitions_ == 2) {
       this->last_valid_half_cycle_interval_ms_ = this->pending_half_cycle_interval_ms_;
     }
     this->pending_half_cycle_interval_ms_ = 0;
