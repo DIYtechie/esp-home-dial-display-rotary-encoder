@@ -58,6 +58,7 @@ class VieweSmartRotaryEncoderSensor : public sensor::Sensor, public Component {
   int logical_steps_per_cycle_() const;
   void publish_value_(bool force = false);
   int32_t poll_encoder_delta_();
+  int step_size_from_half_cycle_timing_() const;
 
   InternalGPIOPin *pin_a_{nullptr};
   InternalGPIOPin *pin_b_{nullptr};
@@ -88,8 +89,10 @@ class VieweSmartRotaryEncoderSensor : public sensor::Sensor, public Component {
   uint32_t smoothed_raw_step_interval_ms_{UINT32_MAX};
   uint32_t last_phase_transition_ms_{0};
   uint8_t last_phase_state_{0};
-  uint32_t raw_edge_activity_since_emit_{0};
-  uint32_t raw_valid_steps_since_emit_{0};
+  uint32_t last_valid_half_cycle_interval_ms_{UINT32_MAX};
+  uint32_t smoothed_half_cycle_interval_ms_{UINT32_MAX};
+  int8_t last_half_cycle_direction_{0};
+  uint8_t consecutive_half_cycles_{0};
   uint8_t debounce_a_count_{0};
   uint8_t debounce_b_count_{0};
   bool encoder_a_change_{false};
