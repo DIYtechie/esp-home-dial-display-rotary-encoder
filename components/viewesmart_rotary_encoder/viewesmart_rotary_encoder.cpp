@@ -171,7 +171,7 @@ void VieweSmartRotaryEncoderSensor::loop() {
   bool changed = false;
 
   if (delta_steps != 0) {
-    this->pending_step_delta_ = delta_steps;
+    this->pending_step_delta_ += delta_steps;
     this->last_reported_step_count_ = current_step_count;
   }
 
@@ -194,6 +194,21 @@ void VieweSmartRotaryEncoderSensor::loop() {
     const uint32_t speed_reference_ms = this->last_raw_step_interval_ms_ != UINT32_MAX
                                             ? this->last_raw_step_interval_ms_
                                             : time_since_value_change;
+    const bool has_complete_phase_packet = this->last_entry_delta_ms_ != UINT32_MAX &&
+                                           this->last_exit_delta_ms_ != UINT32_MAX &&
+                                           this->last_entry_delta_ms_ != 0 && this->last_exit_delta_ms_ != 0;
+    if (!has_complete_phase_packet) {
+      ESP_LOGD(TAG,
+               "defer_step dt=%" PRIu32 "ms raw_dt=%" PRIu32 "ms entry_delta=%" PRIu32
+               "ms exit_delta=%" PRIu32 "ms pending=%" PRId32,
+               time_since_value_change == UINT32_MAX ? 0 : time_since_value_change,
+               speed_reference_ms == UINT32_MAX ? 0 : speed_reference_ms,
+               this->last_entry_delta_ms_ == UINT32_MAX ? 0 : this->last_entry_delta_ms_,
+               this->last_exit_delta_ms_ == UINT32_MAX ? 0 : this->last_exit_delta_ms_,
+               this->pending_step_delta_);
+      this->last_step_publish_ms_ = now;
+      return;
+    }
     const int32_t step_size =
         this->step_size_from_phase_deltas_(this->last_entry_delta_ms_, this->last_exit_delta_ms_);
     const bool high_speed_context = speed_reference_ms != UINT32_MAX &&
