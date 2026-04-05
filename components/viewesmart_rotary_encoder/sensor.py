@@ -34,11 +34,20 @@ RESOLUTIONS = {
     4: VieweSmartRotaryEncoderResolution.VIEWESMART_ROTARY_ENCODER_4_PULSES_PER_CYCLE,
 }
 
+VieweSmartRotaryEncoderAccelerationMode = viewesmart_rotary_encoder_ns.enum(
+    "VieweSmartRotaryEncoderAccelerationMode"
+)
+ACCELERATION_MODES = {
+    "HIGH": VieweSmartRotaryEncoderAccelerationMode.VIEWESMART_ROTARY_ENCODER_ACCELERATION_HIGH,
+    "LOW": VieweSmartRotaryEncoderAccelerationMode.VIEWESMART_ROTARY_ENCODER_ACCELERATION_LOW,
+}
+
 CONF_PIN_RESET = "pin_reset"
 CONF_ON_CLOCKWISE = "on_clockwise"
 CONF_ON_ANTICLOCKWISE = "on_anticlockwise"
 CONF_PUBLISH_INITIAL_VALUE = "publish_initial_value"
 CONF_MAX_STEP = "max_step"
+CONF_ACCELERATION_MODE = "acceleration_mode"
 
 VieweSmartRotaryEncoderSensor = viewesmart_rotary_encoder_ns.class_(
     "VieweSmartRotaryEncoderSensor", sensor.Sensor, cg.Component
@@ -48,6 +57,9 @@ VieweSmartRotaryEncoderSetValueAction = viewesmart_rotary_encoder_ns.class_(
 )
 VieweSmartRotaryEncoderSetMaxStepAction = viewesmart_rotary_encoder_ns.class_(
     "VieweSmartRotaryEncoderSetMaxStepAction", automation.Action
+)
+VieweSmartRotaryEncoderSetAccelerationModeAction = viewesmart_rotary_encoder_ns.class_(
+    "VieweSmartRotaryEncoderSetAccelerationModeAction", automation.Action
 )
 
 
@@ -78,6 +90,9 @@ CONFIG_SCHEMA = cv.All(
             cv.Optional(CONF_MIN_VALUE): cv.int_,
             cv.Optional(CONF_MAX_VALUE): cv.int_,
             cv.Optional(CONF_MAX_STEP, default=10): cv.int_range(min=1, max=10),
+            cv.Optional(CONF_ACCELERATION_MODE, default="HIGH"): cv.enum(
+                ACCELERATION_MODES, upper=True, space="_"
+            ),
             cv.Optional(CONF_PUBLISH_INITIAL_VALUE, default=False): cv.boolean,
             cv.Optional(CONF_RESTORE_MODE, default="RESTORE_DEFAULT_ZERO"): cv.enum(
                 RESTORE_MODES, upper=True, space="_"
@@ -102,6 +117,7 @@ async def to_code(config):
     cg.add(var.set_publish_initial_value(config[CONF_PUBLISH_INITIAL_VALUE]))
     cg.add(var.set_restore_mode(config[CONF_RESTORE_MODE]))
     cg.add(var.set_resolution(config[CONF_RESOLUTION]))
+    cg.add(var.set_acceleration_mode(config[CONF_ACCELERATION_MODE]))
 
     if CONF_PIN_RESET in config:
         pin_reset = await cg.gpio_pin_expression(config[CONF_PIN_RESET])
@@ -161,4 +177,29 @@ async def sensor_viewesmart_rotary_encoder_set_max_step_to_code(
     var = cg.new_Pvariable(action_id, template_arg, parent)
     template_ = await cg.templatable(config[CONF_MAX_STEP], args, int)
     cg.add(var.set_max_step(template_))
+    return var
+
+
+@automation.register_action(
+    "sensor.viewesmart_rotary_encoder.set_acceleration_mode",
+    VieweSmartRotaryEncoderSetAccelerationModeAction,
+    cv.Schema(
+        {
+            cv.Required(CONF_ID): cv.use_id(VieweSmartRotaryEncoderSensor),
+            cv.Required(CONF_ACCELERATION_MODE): cv.templatable(
+                cv.enum(ACCELERATION_MODES, upper=True, space="_")
+            ),
+        }
+    ),
+    synchronous=True,
+)
+async def sensor_viewesmart_rotary_encoder_set_acceleration_mode_to_code(
+    config, action_id, template_arg, args
+):
+    parent = await cg.get_variable(config[CONF_ID])
+    var = cg.new_Pvariable(action_id, template_arg, parent)
+    template_ = await cg.templatable(
+        config[CONF_ACCELERATION_MODE], args, VieweSmartRotaryEncoderAccelerationMode
+    )
+    cg.add(var.set_acceleration_mode(template_))
     return var

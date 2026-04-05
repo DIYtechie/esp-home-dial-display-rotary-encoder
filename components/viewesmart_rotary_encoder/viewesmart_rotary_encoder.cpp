@@ -120,6 +120,8 @@ void VieweSmartRotaryEncoderSensor::dump_config() {
   ESP_LOGCONFIG(TAG, "  Direction Memory Timeout: %" PRIu32 " ms", DIRECTION_MEMORY_TIMEOUT_MS);
   ESP_LOGCONFIG(TAG, "  Reverse Confirmation: slow=half step, fast=full cycle (%d logical steps)",
                 this->logical_steps_per_cycle_());
+  ESP_LOGCONFIG(TAG, "  Acceleration Mode: %s",
+                this->acceleration_mode_ == VIEWESMART_ROTARY_ENCODER_ACCELERATION_LOW ? "LOW" : "HIGH");
   ESP_LOGCONFIG(TAG, "  Max Step: %" PRId32, this->max_step_);
   ESP_LOGCONFIG(TAG, "  Min Value: %" PRId32, this->min_value_);
   ESP_LOGCONFIG(TAG, "  Max Value: %" PRId32, this->max_value_);
@@ -355,6 +357,28 @@ int VieweSmartRotaryEncoderSensor::step_size_from_phase_deltas_(uint32_t entry_d
                                  static_cast<float>(ENTRY_DELTA_SLOW_MS - ENTRY_DELTA_MIN_MS);
   const float normalized_exit = static_cast<float>(EXIT_DELTA_MAX_MS - clamped_exit_delta) /
                                 static_cast<float>(EXIT_DELTA_MAX_MS - EXIT_DELTA_MIN_MS);
+  if (this->acceleration_mode_ == VIEWESMART_ROTARY_ENCODER_ACCELERATION_LOW) {
+    const float weighted_speed = ((4.0f * normalized_entry) + normalized_exit) / 5.0f;
+
+    if (weighted_speed <= 0.42f) {
+      return 1;
+    }
+
+    if (weighted_speed <= 0.68f) {
+      const float low_mid = (weighted_speed - 0.42f) / (0.68f - 0.42f);
+      const float step_value = 1.0f + low_mid * 2.0f;
+      return clamp<int32_t>(static_cast<int32_t>(step_value + 0.5f), 1, 3);
+    }
+
+    if (weighted_speed <= 0.88f) {
+      const float mid = (weighted_speed - 0.68f) / (0.88f - 0.68f);
+      const float step_value = 3.0f + mid * 2.0f;
+      return clamp<int32_t>(static_cast<int32_t>(step_value + 0.5f), 3, 5);
+    }
+
+    return 5;
+  }
+
   const float weighted_speed = ((3.0f * normalized_entry) + normalized_exit) / 4.0f;
 
   if (weighted_speed <= 0.28f) {

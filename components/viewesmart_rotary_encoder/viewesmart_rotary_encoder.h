@@ -26,6 +26,11 @@ enum VieweSmartRotaryEncoderResolution {
   VIEWESMART_ROTARY_ENCODER_4_PULSES_PER_CYCLE = 0x1100,
 };
 
+enum VieweSmartRotaryEncoderAccelerationMode {
+  VIEWESMART_ROTARY_ENCODER_ACCELERATION_HIGH,
+  VIEWESMART_ROTARY_ENCODER_ACCELERATION_LOW,
+};
+
 class VieweSmartRotaryEncoderSensor : public sensor::Sensor, public Component {
  public:
   void set_pin_a(InternalGPIOPin *pin_a) { this->pin_a_ = pin_a; }
@@ -33,6 +38,9 @@ class VieweSmartRotaryEncoderSensor : public sensor::Sensor, public Component {
   void set_reset_pin(InternalGPIOPin *pin_reset) { this->pin_reset_ = pin_reset; }
   void set_restore_mode(VieweSmartRotaryEncoderRestoreMode restore_mode) { this->restore_mode_ = restore_mode; }
   void set_resolution(VieweSmartRotaryEncoderResolution resolution) { this->resolution_ = resolution; }
+  void set_acceleration_mode(VieweSmartRotaryEncoderAccelerationMode acceleration_mode) {
+    this->acceleration_mode_ = acceleration_mode;
+  }
   void set_min_value(int32_t min_value) { this->min_value_ = min_value; }
   void set_max_value(int32_t max_value) { this->max_value_ = max_value; }
   void set_max_step(int max_step) {
@@ -77,6 +85,7 @@ class VieweSmartRotaryEncoderSensor : public sensor::Sensor, public Component {
   bool pending_publish_{false};
   ESPPreferenceObject rtc_;
   VieweSmartRotaryEncoderRestoreMode restore_mode_{VIEWESMART_ROTARY_ENCODER_RESTORE_DEFAULT_ZERO};
+  VieweSmartRotaryEncoderAccelerationMode acceleration_mode_{VIEWESMART_ROTARY_ENCODER_ACCELERATION_HIGH};
 
   int32_t value_{0};
   int32_t last_published_{0};
@@ -140,6 +149,18 @@ template<typename... Ts> class VieweSmartRotaryEncoderSetMaxStepAction : public 
   TEMPLATABLE_VALUE(int, max_step)
 
   void play(const Ts &...x) override { this->encoder_->set_max_step(this->max_step_.value(x...)); }
+
+ protected:
+  VieweSmartRotaryEncoderSensor *encoder_;
+};
+
+template<typename... Ts> class VieweSmartRotaryEncoderSetAccelerationModeAction : public Action<Ts...> {
+ public:
+  explicit VieweSmartRotaryEncoderSetAccelerationModeAction(VieweSmartRotaryEncoderSensor *encoder)
+      : encoder_(encoder) {}
+  TEMPLATABLE_VALUE(VieweSmartRotaryEncoderAccelerationMode, acceleration_mode)
+
+  void play(const Ts &...x) override { this->encoder_->set_acceleration_mode(this->acceleration_mode_.value(x...)); }
 
  protected:
   VieweSmartRotaryEncoderSensor *encoder_;
