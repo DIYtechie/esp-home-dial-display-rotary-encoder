@@ -55,6 +55,8 @@ void VieweSmartRotaryEncoderSensor::setup() {
 
   this->encoder_a_level_ = this->pin_a_->digital_read();
   this->encoder_b_level_ = this->pin_b_->digital_read();
+  this->last_phase_state_ = (static_cast<uint8_t>(this->encoder_a_level_) << 1) | static_cast<uint8_t>(this->encoder_b_level_);
+  this->last_phase_transition_ms_ = 0;
   this->poll_state_ = this->encoder_a_level_ == this->encoder_b_level_ ? POLL_STATE_READY : POLL_STATE_CHECK;
   this->pcnt_initialized_ = true;
 
@@ -232,6 +234,7 @@ void VieweSmartRotaryEncoderSensor::set_value(int value) {
   this->last_raw_transition_ms_ = 0;
   this->last_raw_step_interval_ms_ = UINT32_MAX;
   this->smoothed_raw_step_interval_ms_ = UINT32_MAX;
+  this->last_phase_transition_ms_ = 0;
   this->raw_edge_activity_since_emit_ = 0;
   this->raw_valid_steps_since_emit_ = 0;
   this->last_emitted_direction_ = 0;
@@ -245,6 +248,7 @@ void VieweSmartRotaryEncoderSensor::set_value(int value) {
   this->encoder_b_change_ = false;
   this->encoder_a_level_ = this->pin_a_->digital_read();
   this->encoder_b_level_ = this->pin_b_->digital_read();
+  this->last_phase_state_ = (static_cast<uint8_t>(this->encoder_a_level_) << 1) | static_cast<uint8_t>(this->encoder_b_level_);
   this->poll_state_ = this->encoder_a_level_ == this->encoder_b_level_ ? POLL_STATE_READY : POLL_STATE_CHECK;
   this->value_ = clamp<int32_t>(value, this->min_value_, this->max_value_);
   this->pending_publish_ = true;
@@ -296,6 +300,18 @@ int32_t VieweSmartRotaryEncoderSensor::poll_encoder_delta_() {
     }
   } else {
     this->debounce_b_count_ = 0;
+  }
+
+  if (this->encoder_a_change_ || this->encoder_b_change_) {
+    const uint8_t next_phase_state =
+        (static_cast<uint8_t>(this->encoder_a_level_) << 1) | static_cast<uint8_t>(this->encoder_b_level_);
+    const uint32_t phase_dt =
+        this->last_phase_transition_ms_ == 0 ? 0 : (now - this->last_phase_transition_ms_);
+    ESP_LOGD(TAG, "phase dt=%" PRIu32 "ms prev=%u%u next=%u%u a_change=%s b_change=%s", phase_dt,
+             (this->last_phase_state_ >> 1) & 0x1, this->last_phase_state_ & 0x1, (next_phase_state >> 1) & 0x1,
+             next_phase_state & 0x1, YESNO(this->encoder_a_change_), YESNO(this->encoder_b_change_));
+    this->last_phase_state_ = next_phase_state;
+    this->last_phase_transition_ms_ = now;
   }
 
   const int32_t step_delta = this->resolution_divider_();
