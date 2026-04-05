@@ -55,7 +55,9 @@ class VieweSmartRotaryEncoderSensor : public sensor::Sensor, public Component {
 
  protected:
   int resolution_divider_() const;
+  int logical_steps_per_cycle_() const;
   void publish_value_(bool force = false);
+  int32_t poll_encoder_delta_();
 
   InternalGPIOPin *pin_a_{nullptr};
   InternalGPIOPin *pin_b_{nullptr};
@@ -77,7 +79,20 @@ class VieweSmartRotaryEncoderSensor : public sensor::Sensor, public Component {
   uint32_t last_value_change_ms_{0};
   int8_t last_emitted_direction_{0};
   int8_t pending_direction_confirmation_{0};
+  uint8_t pending_direction_confirmation_count_{0};
+  int32_t pending_direction_confirmation_magnitude_{0};
   uint32_t pending_direction_confirmation_ms_{0};
+  uint32_t last_poll_ms_{0};
+  uint32_t last_raw_transition_ms_{0};
+  uint32_t last_raw_step_interval_ms_{UINT32_MAX};
+  uint32_t smoothed_raw_step_interval_ms_{UINT32_MAX};
+  uint8_t debounce_a_count_{0};
+  uint8_t debounce_b_count_{0};
+  bool encoder_a_change_{false};
+  bool encoder_b_change_{false};
+  bool encoder_a_level_{false};
+  bool encoder_b_level_{false};
+  uint8_t poll_state_{0};
 
   VieweSmartRotaryEncoderResolution resolution_{VIEWESMART_ROTARY_ENCODER_1_PULSE_PER_CYCLE};
 
