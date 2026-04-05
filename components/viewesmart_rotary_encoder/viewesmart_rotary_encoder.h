@@ -58,7 +58,7 @@ class VieweSmartRotaryEncoderSensor : public sensor::Sensor, public Component {
   int logical_steps_per_cycle_() const;
   void publish_value_(bool force = false);
   int32_t poll_encoder_delta_();
-  int step_size_from_half_cycle_timing_() const;
+  int step_size_from_half_cycle_timing_(uint32_t context_interval_ms) const;
 
   InternalGPIOPin *pin_a_{nullptr};
   InternalGPIOPin *pin_b_{nullptr};
