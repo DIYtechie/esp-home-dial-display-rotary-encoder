@@ -212,14 +212,15 @@ void VieweSmartRotaryEncoderSensor::loop() {
       this->last_step_publish_ms_ = now;
       return;
     }
-    const int32_t step_size =
-        this->step_size_from_phase_deltas_(this->last_entry_delta_ms_, this->last_exit_delta_ms_);
+    int32_t step_size = this->step_size_from_phase_deltas_(this->last_entry_delta_ms_, this->last_exit_delta_ms_);
     const bool high_speed_context = speed_reference_ms != UINT32_MAX &&
                                     speed_reference_ms <= FAST_REVERSE_FULL_CYCLE_THRESHOLD_MS;
+    bool confirmed_fast_reverse = false;
 
     if (direction_changed) {
       const int32_t required_confirmation_magnitude =
           high_speed_context ? this->logical_steps_per_cycle_() : 1;
+      const uint8_t required_confirmation_count = high_speed_context ? 2 : 1;
       const bool confirmation_window_open =
           this->pending_direction_confirmation_ == direction &&
           (now - this->pending_direction_confirmation_ms_) <= DIRECTION_CONFIRMATION_WINDOW_MS;
@@ -233,18 +234,28 @@ void VieweSmartRotaryEncoderSensor::loop() {
         this->pending_direction_confirmation_magnitude_ = pending_step_magnitude;
       }
 
-      if (this->pending_direction_confirmation_magnitude_ < required_confirmation_magnitude) {
+      const bool confirmation_ready =
+          this->pending_direction_confirmation_magnitude_ >= required_confirmation_magnitude &&
+          this->pending_direction_confirmation_count_ >= required_confirmation_count;
+      if (!confirmation_ready) {
         ESP_LOGD(TAG,
                  "reject_reverse dt=%" PRIu32 " raw_dt=%" PRIu32 " dir=%" PRId32 " pending=%" PRId32
-                 " confirm=%" PRId32 "/%" PRId32 " fast=%s",
+                 " confirm=%u/%u mag=%" PRId32 "/%" PRId32 " fast=%s",
                  time_since_value_change == UINT32_MAX ? 0 : time_since_value_change,
                  speed_reference_ms == UINT32_MAX ? 0 : speed_reference_ms, direction, this->pending_step_delta_,
+                 this->pending_direction_confirmation_count_, required_confirmation_count,
                  this->pending_direction_confirmation_magnitude_, required_confirmation_magnitude,
                  YESNO(high_speed_context));
         this->pending_step_delta_ = 0;
         this->last_step_publish_ms_ = now;
         return;
       }
+      confirmed_fast_reverse = high_speed_context;
+    }
+
+    if (confirmed_fast_reverse) {
+      // Keep the confirming reverse step small; let later clean steps accelerate in the new direction.
+      step_size = std::min<int32_t>(step_size, 2);
     }
 
     const int32_t previous_value = this->value_;
