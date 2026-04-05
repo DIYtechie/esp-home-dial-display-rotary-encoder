@@ -15,11 +15,11 @@ static const uint32_t FAST_STEP_PUBLISH_INTERVAL_MS = 5;
 static const uint32_t DIRECTION_CONFIRMATION_WINDOW_MS = 180;
 static const uint32_t DIRECTION_MEMORY_TIMEOUT_MS = 700;
 static const uint32_t FAST_REVERSE_FULL_CYCLE_THRESHOLD_MS = 220;
-static const uint32_t ACCELERATION_CONTEXT_TIMEOUT_MS = 900;
-static const uint32_t HALF_CYCLE_MIN_MS = 15;
+static const uint32_t ACCELERATION_CONTEXT_TIMEOUT_MS = 1100;
+static const uint32_t HALF_CYCLE_MIN_MS = 20;
 static const uint32_t HALF_CYCLE_MAX_MS = 200;
 static const int32_t HALF_CYCLE_MIN_STEP = 1;
-static const int32_t HALF_CYCLE_MAX_STEP = 12;
+static const int32_t HALF_CYCLE_MAX_STEP = 10;
 
 enum PollState : uint8_t {
   POLL_STATE_CHECK = 0,
@@ -316,7 +316,7 @@ int VieweSmartRotaryEncoderSensor::step_size_from_half_cycle_timing_(uint32_t co
       clamp<uint32_t>(this->last_valid_half_cycle_interval_ms_, HALF_CYCLE_MIN_MS, HALF_CYCLE_MAX_MS);
   const float normalized =
       static_cast<float>(HALF_CYCLE_MAX_MS - clamped_half_dt) / static_cast<float>(HALF_CYCLE_MAX_MS - HALF_CYCLE_MIN_MS);
-  const float curved = normalized * normalized * normalized * normalized;
+  const float curved = normalized * normalized * normalized * normalized * normalized * normalized;
   const float step_value =
       HALF_CYCLE_MIN_STEP + curved * static_cast<float>(HALF_CYCLE_MAX_STEP - HALF_CYCLE_MIN_STEP);
   return clamp<int32_t>(static_cast<int32_t>(step_value + 0.5f), HALF_CYCLE_MIN_STEP, HALF_CYCLE_MAX_STEP);
