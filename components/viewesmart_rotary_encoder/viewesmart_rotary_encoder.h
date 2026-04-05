@@ -55,6 +55,7 @@ class VieweSmartRotaryEncoderSensor : public sensor::Sensor, public Component {
 
  protected:
   int resolution_divider_() const;
+  int logical_steps_per_cycle_() const;
   void publish_value_(bool force = false);
   int32_t poll_encoder_delta_();
 
@@ -83,6 +84,8 @@ class VieweSmartRotaryEncoderSensor : public sensor::Sensor, public Component {
   uint32_t pending_direction_confirmation_ms_{0};
   uint32_t last_poll_ms_{0};
   uint32_t last_raw_transition_ms_{0};
+  uint32_t last_raw_step_interval_ms_{UINT32_MAX};
+  uint32_t smoothed_raw_step_interval_ms_{UINT32_MAX};
   uint8_t debounce_a_count_{0};
   uint8_t debounce_b_count_{0};
   bool encoder_a_change_{false};
