@@ -15,8 +15,10 @@ static const uint32_t FAST_STEP_PUBLISH_INTERVAL_MS = 5;
 static const uint32_t DIRECTION_CONFIRMATION_WINDOW_MS = 180;
 static const uint32_t DIRECTION_MEMORY_TIMEOUT_MS = 700;
 static const uint32_t FAST_REVERSE_FULL_CYCLE_THRESHOLD_MS = 220;
-static const uint32_t ENTRY_DELTA_FAST_MS = 250;
-static const uint32_t ENTRY_DELTA_MEDIUM_MS = 700;
+static const uint32_t ENTRY_DELTA_MIN_MS = 40;
+static const uint32_t ENTRY_DELTA_FAST_MS = 180;
+static const uint32_t ENTRY_DELTA_MEDIUM_MS = 350;
+static const uint32_t ENTRY_DELTA_FIRST_EVENT_MS = 500;
 static const uint32_t EXIT_DELTA_MIN_MS = 5;
 static const uint32_t EXIT_DELTA_MAX_MS = 200;
 
@@ -317,25 +319,31 @@ int VieweSmartRotaryEncoderSensor::step_size_from_phase_deltas_(uint32_t entry_d
   if (entry_delta_ms == UINT32_MAX || exit_delta_ms == UINT32_MAX) {
     return 1;
   }
-  if (entry_delta_ms > ENTRY_DELTA_MEDIUM_MS) {
+
+  if (entry_delta_ms > ENTRY_DELTA_FIRST_EVENT_MS) {
     return exit_delta_ms < 20 ? 2 : 1;
   }
 
+  const uint32_t clamped_entry_delta =
+      clamp<uint32_t>(entry_delta_ms, ENTRY_DELTA_MIN_MS, ENTRY_DELTA_FIRST_EVENT_MS);
   const uint32_t clamped_exit_delta =
       clamp<uint32_t>(exit_delta_ms, EXIT_DELTA_MIN_MS, EXIT_DELTA_MAX_MS);
-  const float normalized = static_cast<float>(EXIT_DELTA_MAX_MS - clamped_exit_delta) /
-                           static_cast<float>(EXIT_DELTA_MAX_MS - EXIT_DELTA_MIN_MS);
+  const float normalized_entry = static_cast<float>(ENTRY_DELTA_FIRST_EVENT_MS - clamped_entry_delta) /
+                                 static_cast<float>(ENTRY_DELTA_FIRST_EVENT_MS - ENTRY_DELTA_MIN_MS);
+  const float normalized_exit = static_cast<float>(EXIT_DELTA_MAX_MS - clamped_exit_delta) /
+                                static_cast<float>(EXIT_DELTA_MAX_MS - EXIT_DELTA_MIN_MS);
+  const float weighted_speed = ((2.0f * normalized_entry) + normalized_exit) / 3.0f;
 
-  int32_t zone_max_step = 2;
+  int32_t zone_max_step = 3;
   if (entry_delta_ms <= ENTRY_DELTA_FAST_MS) {
     zone_max_step = 10;
   } else if (entry_delta_ms <= ENTRY_DELTA_MEDIUM_MS) {
     zone_max_step = 6;
   } else {
-    zone_max_step = 2;
+    zone_max_step = 3;
   }
 
-  const float curved = normalized * normalized * normalized * normalized;
+  const float curved = weighted_speed * weighted_speed * weighted_speed;
   const float step_value = 1.0f + curved * static_cast<float>(zone_max_step - 1);
   return clamp<int32_t>(static_cast<int32_t>(step_value + 0.5f), 1, zone_max_step);
 }
