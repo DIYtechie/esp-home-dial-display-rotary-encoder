@@ -5,6 +5,7 @@
 
 #ifdef USE_ESP_IDF
 #include <driver/pcnt.h>
+#include <driver/gpio.h>
 #endif
 
 #include "esphome/components/sensor/sensor.h"
@@ -58,6 +59,9 @@ class VieweSmartRotaryEncoderSensor : public sensor::Sensor, public Component {
   int logical_steps_per_cycle_() const;
   void publish_value_(bool force = false);
   int32_t poll_encoder_delta_();
+#ifdef USE_ESP_IDF
+  static void IRAM_ATTR gpio_isr_(void *arg);
+#endif
 
   InternalGPIOPin *pin_a_{nullptr};
   InternalGPIOPin *pin_b_{nullptr};
@@ -75,8 +79,6 @@ class VieweSmartRotaryEncoderSensor : public sensor::Sensor, public Component {
   int32_t raw_count_total_{0};
   int32_t last_reported_step_count_{0};
   int32_t pending_step_delta_{0};
-  int8_t pending_half_direction_{0};
-  uint8_t pending_half_count_{0};
   uint32_t last_step_publish_ms_{0};
   uint32_t last_value_change_ms_{0};
   int8_t last_emitted_direction_{0};
@@ -94,13 +96,20 @@ class VieweSmartRotaryEncoderSensor : public sensor::Sensor, public Component {
   bool encoder_b_change_{false};
   bool encoder_a_level_{false};
   bool encoder_b_level_{false};
-  uint8_t poll_state_{0};
+  uint8_t last_ab_state_{0};
 
   VieweSmartRotaryEncoderResolution resolution_{VIEWESMART_ROTARY_ENCODER_1_PULSE_PER_CYCLE};
 
 #ifdef USE_ESP_IDF
   pcnt_unit_t pcnt_unit_{PCNT_UNIT_0};
   bool pcnt_initialized_{false};
+  int pin_a_gpio_{-1};
+  int pin_b_gpio_{-1};
+  static constexpr uint8_t ISR_QUEUE_SIZE = 32;
+  volatile uint8_t isr_queue_[ISR_QUEUE_SIZE]{};
+  volatile uint8_t isr_queue_head_{0};
+  volatile uint8_t isr_queue_tail_{0};
+  volatile uint32_t isr_overflow_count_{0};
 #endif
 
   CallbackManager<void()> on_clockwise_callback_{};
