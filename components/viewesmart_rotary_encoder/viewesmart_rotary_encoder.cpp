@@ -353,22 +353,22 @@ int VieweSmartRotaryEncoderSensor::step_size_from_phase_deltas_(uint32_t entry_d
                                  static_cast<float>(ENTRY_DELTA_SLOW_MS - ENTRY_DELTA_MIN_MS);
   const float normalized_exit = static_cast<float>(EXIT_DELTA_MAX_MS - clamped_exit_delta) /
                                 static_cast<float>(EXIT_DELTA_MAX_MS - EXIT_DELTA_MIN_MS);
-  const float weighted_speed = ((2.0f * normalized_entry) + normalized_exit) / 3.0f;
+  const float weighted_speed = ((3.0f * normalized_entry) + normalized_exit) / 4.0f;
 
-  if (weighted_speed <= 0.18f) {
+  if (weighted_speed <= 0.28f) {
     return 1;
   }
 
-  if (weighted_speed <= 0.50f) {
-    const float mid = (weighted_speed - 0.18f) / (0.50f - 0.18f);
-    const float step_value = 1.0f + mid * 2.0f;  // Broad middle band: mostly 2-3 steps.
-    return clamp<int32_t>(static_cast<int32_t>(step_value + 0.5f), 1, 3);
+  if (weighted_speed <= 0.55f) {
+    const float low_mid = (weighted_speed - 0.28f) / (0.55f - 0.28f);
+    const float step_value = 1.0f + low_mid * 1.5f;  // Mostly 2 steps, with a gentle ramp from 1.
+    return clamp<int32_t>(static_cast<int32_t>(step_value + 0.5f), 1, 2);
   }
 
   if (weighted_speed <= 0.78f) {
-    const float fast = (weighted_speed - 0.50f) / (0.78f - 0.50f);
-    const float step_value = 3.0f + fast * 3.0f;
-    return clamp<int32_t>(static_cast<int32_t>(step_value + 0.5f), 3, 6);
+    const float mid = (weighted_speed - 0.55f) / (0.78f - 0.55f);
+    const float step_value = 2.0f + mid * 3.0f;
+    return clamp<int32_t>(static_cast<int32_t>(step_value + 0.5f), 2, 5);
   }
 
   const float very_fast = (weighted_speed - 0.78f) / (1.0f - 0.78f);
