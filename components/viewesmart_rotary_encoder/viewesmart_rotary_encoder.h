@@ -105,7 +105,7 @@ class VieweSmartRotaryEncoderSensor : public sensor::Sensor, public Component {
   bool pcnt_initialized_{false};
   int pin_a_gpio_{-1};
   int pin_b_gpio_{-1};
-  static constexpr uint8_t ISR_QUEUE_SIZE = 32;
+  static constexpr uint8_t ISR_QUEUE_SIZE = 128;
   volatile uint8_t isr_queue_[ISR_QUEUE_SIZE]{};
   volatile uint8_t isr_queue_head_{0};
   volatile uint8_t isr_queue_tail_{0};
