@@ -54,6 +54,7 @@ void VieweSmartRotaryEncoderSensor::setup() {
   this->last_step_publish_ms_ = millis();
   this->last_value_change_ms_ = 0;
   this->last_poll_ms_ = millis();
+  this->last_raw_transition_ms_ = 0;
 
   this->pin_a_->setup();
   this->pin_b_->setup();
@@ -284,6 +285,7 @@ void VieweSmartRotaryEncoderSensor::set_value(int value) {
   this->debounce_b_count_ = 0;
   this->encoder_a_change_ = false;
   this->encoder_b_change_ = false;
+  this->last_raw_transition_ms_ = 0;
   this->encoder_a_level_ = this->pin_a_->digital_read();
   this->encoder_b_level_ = this->pin_b_->digital_read();
   this->poll_state_ = this->encoder_a_level_ == this->encoder_b_level_ ? POLL_STATE_READY : POLL_STATE_CHECK;
@@ -351,6 +353,10 @@ int32_t VieweSmartRotaryEncoderSensor::poll_encoder_delta_() {
       if (this->encoder_b_change_) {
         this->encoder_b_change_ = false;
         this->poll_state_ = POLL_STATE_READY;
+        const uint32_t raw_dt = this->last_raw_transition_ms_ == 0 ? 0 : now - this->last_raw_transition_ms_;
+        ESP_LOGD(TAG, "raw_step dt=%" PRIu32 "ms delta=%" PRId32 " a=%d b=%d state=%u", raw_dt, -step_delta,
+                 this->encoder_a_level_, this->encoder_b_level_, this->poll_state_);
+        this->last_raw_transition_ms_ = now;
         return -step_delta;
       }
       if (this->encoder_a_change_) {
@@ -363,6 +369,10 @@ int32_t VieweSmartRotaryEncoderSensor::poll_encoder_delta_() {
       if (this->encoder_a_change_) {
         this->encoder_a_change_ = false;
         this->poll_state_ = POLL_STATE_READY;
+        const uint32_t raw_dt = this->last_raw_transition_ms_ == 0 ? 0 : now - this->last_raw_transition_ms_;
+        ESP_LOGD(TAG, "raw_step dt=%" PRIu32 "ms delta=%" PRId32 " a=%d b=%d state=%u", raw_dt, step_delta,
+                 this->encoder_a_level_, this->encoder_b_level_, this->poll_state_);
+        this->last_raw_transition_ms_ = now;
         return step_delta;
       }
       if (this->encoder_b_change_) {

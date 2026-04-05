@@ -82,6 +82,7 @@ class VieweSmartRotaryEncoderSensor : public sensor::Sensor, public Component {
   int32_t pending_direction_confirmation_magnitude_{0};
   uint32_t pending_direction_confirmation_ms_{0};
   uint32_t last_poll_ms_{0};
+  uint32_t last_raw_transition_ms_{0};
   uint8_t debounce_a_count_{0};
   uint8_t debounce_b_count_{0};
   bool encoder_a_change_{false};
