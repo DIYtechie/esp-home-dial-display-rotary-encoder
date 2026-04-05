@@ -15,11 +15,10 @@ static const uint32_t FAST_STEP_PUBLISH_INTERVAL_MS = 5;
 static const uint32_t DIRECTION_CONFIRMATION_WINDOW_MS = 180;
 static const uint32_t DIRECTION_MEMORY_TIMEOUT_MS = 700;
 static const uint32_t FAST_REVERSE_FULL_CYCLE_THRESHOLD_MS = 220;
-static const uint32_t ACCELERATION_CONTEXT_TIMEOUT_MS = 1100;
-static const uint32_t HALF_CYCLE_MIN_MS = 20;
-static const uint32_t HALF_CYCLE_MAX_MS = 200;
-static const int32_t HALF_CYCLE_MIN_STEP = 1;
-static const int32_t HALF_CYCLE_MAX_STEP = 10;
+static const uint32_t ENTRY_DELTA_FAST_MS = 250;
+static const uint32_t ENTRY_DELTA_MEDIUM_MS = 700;
+static const uint32_t EXIT_DELTA_MIN_MS = 5;
+static const uint32_t EXIT_DELTA_MAX_MS = 200;
 
 enum PollState : uint8_t {
   POLL_STATE_CHECK = 0,
@@ -81,7 +80,10 @@ void VieweSmartRotaryEncoderSensor::setup() {
   this->last_raw_transition_ms_ = 0;
   this->last_raw_step_interval_ms_ = UINT32_MAX;
   this->smoothed_raw_step_interval_ms_ = UINT32_MAX;
-  this->last_valid_half_cycle_interval_ms_ = UINT32_MAX;
+  this->pending_entry_delta_ms_ = UINT32_MAX;
+  this->pending_exit_delta_ms_ = UINT32_MAX;
+  this->last_entry_delta_ms_ = UINT32_MAX;
+  this->last_exit_delta_ms_ = UINT32_MAX;
 
   this->pin_a_->setup();
   this->pin_b_->setup();
@@ -190,7 +192,8 @@ void VieweSmartRotaryEncoderSensor::loop() {
     const uint32_t speed_reference_ms = this->last_raw_step_interval_ms_ != UINT32_MAX
                                             ? this->last_raw_step_interval_ms_
                                             : time_since_value_change;
-    const int32_t step_size = this->step_size_from_half_cycle_timing_(speed_reference_ms);
+    const int32_t step_size =
+        this->step_size_from_phase_deltas_(this->last_entry_delta_ms_, this->last_exit_delta_ms_);
     const bool high_speed_context = speed_reference_ms != UINT32_MAX &&
                                     speed_reference_ms <= FAST_REVERSE_FULL_CYCLE_THRESHOLD_MS;
 
@@ -229,11 +232,13 @@ void VieweSmartRotaryEncoderSensor::loop() {
 
     if (this->value_ != previous_value) {
       ESP_LOGD(TAG,
-               "step dt=%" PRIu32 "ms raw_dt=%" PRIu32 "ms half_dt=%" PRIu32 "ms dir=%" PRId32
+               "step dt=%" PRIu32 "ms raw_dt=%" PRIu32 "ms entry_delta=%" PRIu32 "ms exit_delta=%" PRIu32
+               "ms dir=%" PRId32
                " step=%" PRId32 " value=%" PRId32 "->%" PRId32,
                time_since_value_change == UINT32_MAX ? 0 : time_since_value_change,
                speed_reference_ms == UINT32_MAX ? 0 : speed_reference_ms,
-               this->last_valid_half_cycle_interval_ms_ == UINT32_MAX ? 0 : this->last_valid_half_cycle_interval_ms_,
+               this->last_entry_delta_ms_ == UINT32_MAX ? 0 : this->last_entry_delta_ms_,
+               this->last_exit_delta_ms_ == UINT32_MAX ? 0 : this->last_exit_delta_ms_,
                direction, step_size, previous_value, this->value_);
       if (direction > 0) {
         this->on_clockwise_callback_.call();
@@ -272,7 +277,10 @@ void VieweSmartRotaryEncoderSensor::set_value(int value) {
   this->last_raw_step_interval_ms_ = UINT32_MAX;
   this->smoothed_raw_step_interval_ms_ = UINT32_MAX;
   this->last_phase_transition_ms_ = 0;
-  this->last_valid_half_cycle_interval_ms_ = UINT32_MAX;
+  this->pending_entry_delta_ms_ = UINT32_MAX;
+  this->pending_exit_delta_ms_ = UINT32_MAX;
+  this->last_entry_delta_ms_ = UINT32_MAX;
+  this->last_exit_delta_ms_ = UINT32_MAX;
   this->last_emitted_direction_ = 0;
   this->pending_direction_confirmation_ = 0;
   this->pending_direction_confirmation_count_ = 0;
@@ -304,22 +312,32 @@ int VieweSmartRotaryEncoderSensor::resolution_divider_() const {
 
 int VieweSmartRotaryEncoderSensor::logical_steps_per_cycle_() const { return 4 / this->resolution_divider_(); }
 
-int VieweSmartRotaryEncoderSensor::step_size_from_half_cycle_timing_(uint32_t context_interval_ms) const {
-  if (this->last_valid_half_cycle_interval_ms_ == UINT32_MAX) {
+int VieweSmartRotaryEncoderSensor::step_size_from_phase_deltas_(uint32_t entry_delta_ms,
+                                                                uint32_t exit_delta_ms) const {
+  if (entry_delta_ms == UINT32_MAX || exit_delta_ms == UINT32_MAX) {
     return 1;
   }
-  if (context_interval_ms == UINT32_MAX || context_interval_ms > ACCELERATION_CONTEXT_TIMEOUT_MS) {
-    return 1;
+  if (entry_delta_ms > ENTRY_DELTA_MEDIUM_MS) {
+    return exit_delta_ms < 20 ? 2 : 1;
   }
 
-  const uint32_t clamped_half_dt =
-      clamp<uint32_t>(this->last_valid_half_cycle_interval_ms_, HALF_CYCLE_MIN_MS, HALF_CYCLE_MAX_MS);
-  const float normalized =
-      static_cast<float>(HALF_CYCLE_MAX_MS - clamped_half_dt) / static_cast<float>(HALF_CYCLE_MAX_MS - HALF_CYCLE_MIN_MS);
-  const float curved = normalized * normalized * normalized * normalized * normalized * normalized;
-  const float step_value =
-      HALF_CYCLE_MIN_STEP + curved * static_cast<float>(HALF_CYCLE_MAX_STEP - HALF_CYCLE_MIN_STEP);
-  return clamp<int32_t>(static_cast<int32_t>(step_value + 0.5f), HALF_CYCLE_MIN_STEP, HALF_CYCLE_MAX_STEP);
+  const uint32_t clamped_exit_delta =
+      clamp<uint32_t>(exit_delta_ms, EXIT_DELTA_MIN_MS, EXIT_DELTA_MAX_MS);
+  const float normalized = static_cast<float>(EXIT_DELTA_MAX_MS - clamped_exit_delta) /
+                           static_cast<float>(EXIT_DELTA_MAX_MS - EXIT_DELTA_MIN_MS);
+
+  int32_t zone_max_step = 2;
+  if (entry_delta_ms <= ENTRY_DELTA_FAST_MS) {
+    zone_max_step = 10;
+  } else if (entry_delta_ms <= ENTRY_DELTA_MEDIUM_MS) {
+    zone_max_step = 6;
+  } else {
+    zone_max_step = 2;
+  }
+
+  const float curved = normalized * normalized * normalized * normalized;
+  const float step_value = 1.0f + curved * static_cast<float>(zone_max_step - 1);
+  return clamp<int32_t>(static_cast<int32_t>(step_value + 0.5f), 1, zone_max_step);
 }
 
 int32_t VieweSmartRotaryEncoderSensor::poll_encoder_delta_() {
@@ -361,22 +379,37 @@ int32_t VieweSmartRotaryEncoderSensor::poll_encoder_delta_() {
         this->last_phase_transition_ms_ == 0 ? 0 : (now - this->last_phase_transition_ms_);
     const int8_t half_cycle_direction = phase_transition_direction(this->last_phase_state_, next_phase_state);
     if (half_cycle_direction != 0 && phase_dt != 0) {
-      this->last_valid_half_cycle_interval_ms_ = phase_dt;
+      if (this->pending_entry_delta_ms_ == UINT32_MAX) {
+        this->pending_entry_delta_ms_ = phase_dt;
+        this->pending_exit_delta_ms_ = UINT32_MAX;
+      } else {
+        this->pending_exit_delta_ms_ = phase_dt;
+      }
+    } else if (half_cycle_direction == 0) {
+      this->pending_entry_delta_ms_ = UINT32_MAX;
+      this->pending_exit_delta_ms_ = UINT32_MAX;
     }
 
-    const uint32_t acceleration_context_ms =
-        this->last_raw_step_interval_ms_ != UINT32_MAX ? this->last_raw_step_interval_ms_ : UINT32_MAX;
-    ESP_LOGD(TAG, "phase dt=%" PRIu32 "ms prev=%u%u next=%u%u dir=%" PRId8 " step=%" PRId32,
+    ESP_LOGD(TAG,
+             "phase dt=%" PRIu32 "ms prev=%u%u next=%u%u dir=%" PRId8 " entry_delta=%" PRIu32
+             "ms exit_delta=%" PRIu32 "ms step=%" PRId32,
              phase_dt,
              (this->last_phase_state_ >> 1) & 0x1, this->last_phase_state_ & 0x1, (next_phase_state >> 1) & 0x1,
              next_phase_state & 0x1, half_cycle_direction,
-             this->step_size_from_half_cycle_timing_(acceleration_context_ms));
+             this->pending_entry_delta_ms_ == UINT32_MAX ? 0 : this->pending_entry_delta_ms_,
+             this->pending_exit_delta_ms_ == UINT32_MAX ? 0 : this->pending_exit_delta_ms_,
+             this->step_size_from_phase_deltas_(this->pending_entry_delta_ms_, this->pending_exit_delta_ms_));
     this->last_phase_state_ = next_phase_state;
     this->last_phase_transition_ms_ = now;
   }
 
   const int32_t step_delta = this->resolution_divider_();
   auto log_raw_step = [&](int32_t delta) -> int32_t {
+    this->last_entry_delta_ms_ = this->pending_entry_delta_ms_;
+    this->last_exit_delta_ms_ = this->pending_exit_delta_ms_;
+    this->pending_entry_delta_ms_ = UINT32_MAX;
+    this->pending_exit_delta_ms_ = UINT32_MAX;
+
     uint32_t raw_dt = UINT32_MAX;
     if (this->last_raw_transition_ms_ != 0) {
       raw_dt = now - this->last_raw_transition_ms_;
