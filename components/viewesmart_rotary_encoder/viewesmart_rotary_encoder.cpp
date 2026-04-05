@@ -15,6 +15,7 @@ static const uint32_t FAST_STEP_PUBLISH_INTERVAL_MS = 5;
 static const uint32_t DIRECTION_CONFIRMATION_WINDOW_MS = 180;
 static const uint32_t DIRECTION_MEMORY_TIMEOUT_MS = 700;
 static const uint32_t FAST_REVERSE_FULL_CYCLE_THRESHOLD_MS = 220;
+static const uint32_t ACCELERATION_CONTEXT_TIMEOUT_MS = 600;
 static const uint32_t HALF_CYCLE_MIN_MS = 5;
 static const uint32_t HALF_CYCLE_MAX_MS = 200;
 static const int32_t HALF_CYCLE_MIN_STEP = 1;
@@ -177,7 +178,6 @@ void VieweSmartRotaryEncoderSensor::loop() {
 
   if (this->pending_step_delta_ != 0 && (now - this->last_step_publish_ms_) >= effective_step_interval) {
     const int32_t direction = this->pending_step_delta_ > 0 ? 1 : -1;
-    const int32_t step_size = this->step_size_from_half_cycle_timing_();
     const bool direction_memory_expired =
         this->last_value_change_ms_ == 0 || (now - this->last_value_change_ms_) >= DIRECTION_MEMORY_TIMEOUT_MS;
     const int8_t effective_last_direction = direction_memory_expired ? 0 : this->last_emitted_direction_;
@@ -190,6 +190,7 @@ void VieweSmartRotaryEncoderSensor::loop() {
     const uint32_t speed_reference_ms = this->last_raw_step_interval_ms_ != UINT32_MAX
                                             ? this->last_raw_step_interval_ms_
                                             : time_since_value_change;
+    const int32_t step_size = this->step_size_from_half_cycle_timing_(speed_reference_ms);
     const bool high_speed_context = speed_reference_ms != UINT32_MAX &&
                                     speed_reference_ms <= FAST_REVERSE_FULL_CYCLE_THRESHOLD_MS;
 
@@ -303,8 +304,11 @@ int VieweSmartRotaryEncoderSensor::resolution_divider_() const {
 
 int VieweSmartRotaryEncoderSensor::logical_steps_per_cycle_() const { return 4 / this->resolution_divider_(); }
 
-int VieweSmartRotaryEncoderSensor::step_size_from_half_cycle_timing_() const {
+int VieweSmartRotaryEncoderSensor::step_size_from_half_cycle_timing_(uint32_t context_interval_ms) const {
   if (this->last_valid_half_cycle_interval_ms_ == UINT32_MAX) {
+    return 1;
+  }
+  if (context_interval_ms == UINT32_MAX || context_interval_ms > ACCELERATION_CONTEXT_TIMEOUT_MS) {
     return 1;
   }
 
@@ -360,10 +364,13 @@ int32_t VieweSmartRotaryEncoderSensor::poll_encoder_delta_() {
       this->last_valid_half_cycle_interval_ms_ = phase_dt;
     }
 
+    const uint32_t acceleration_context_ms =
+        this->last_raw_step_interval_ms_ != UINT32_MAX ? this->last_raw_step_interval_ms_ : UINT32_MAX;
     ESP_LOGD(TAG, "phase dt=%" PRIu32 "ms prev=%u%u next=%u%u dir=%" PRId8 " step=%" PRId32,
              phase_dt,
              (this->last_phase_state_ >> 1) & 0x1, this->last_phase_state_ & 0x1, (next_phase_state >> 1) & 0x1,
-             next_phase_state & 0x1, half_cycle_direction, this->step_size_from_half_cycle_timing_());
+             next_phase_state & 0x1, half_cycle_direction,
+             this->step_size_from_half_cycle_timing_(acceleration_context_ms));
     this->last_phase_state_ = next_phase_state;
     this->last_phase_transition_ms_ = now;
   }
