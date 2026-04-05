@@ -18,7 +18,7 @@ static const uint32_t FAST_REVERSE_FULL_CYCLE_THRESHOLD_MS = 220;
 static const uint32_t ENTRY_DELTA_MIN_MS = 40;
 static const uint32_t ENTRY_DELTA_FAST_MS = 180;
 static const uint32_t ENTRY_DELTA_MEDIUM_MS = 350;
-static const uint32_t ENTRY_DELTA_FIRST_EVENT_MS = 500;
+static const uint32_t ENTRY_DELTA_FIRST_EVENT_MS = 300;
 static const uint32_t EXIT_DELTA_MIN_MS = 5;
 static const uint32_t EXIT_DELTA_MAX_MS = 200;
 
