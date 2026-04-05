@@ -492,4 +492,70 @@ int32_t VieweSmartRotaryEncoderSensor::poll_encoder_delta_() {
     const uint32_t logged_raw_dt = raw_dt == UINT32_MAX ? 0 : raw_dt;
     const uint32_t logged_avg_dt =
         this->smoothed_raw_step_interval_ms_ == UINT32_MAX ? 0 : this->smoothed_raw_step_interval_ms_;
-    ESP_LOGD(TAG, "raw_step dt=%" PRIu32 "ms avg=%" PRIu32 "ms delta=%
+    ESP_LOGD(TAG, "raw_step dt=%" PRIu32 "ms avg=%" PRIu32 "ms delta=%" PRId32 " a=%d b=%d state=%u", logged_raw_dt,
+             logged_avg_dt, delta, this->encoder_a_level_, this->encoder_b_level_, this->poll_state_);
+    return delta;
+  };
+
+  switch (this->poll_state_) {
+    case POLL_STATE_READY:
+      if (this->encoder_a_change_) {
+        this->encoder_a_change_ = false;
+        this->poll_state_ = POLL_STATE_PHASE_A;
+      } else if (this->encoder_b_change_) {
+        this->encoder_b_change_ = false;
+        this->poll_state_ = POLL_STATE_PHASE_B;
+      }
+      break;
+
+    case POLL_STATE_PHASE_A:
+      if (this->encoder_b_change_) {
+        this->encoder_b_change_ = false;
+        this->poll_state_ = POLL_STATE_READY;
+        return log_raw_step(-step_delta);
+      }
+      if (this->encoder_a_change_) {
+        this->encoder_a_change_ = false;
+        this->poll_state_ = POLL_STATE_READY;
+      }
+      break;
+
+    case POLL_STATE_PHASE_B:
+      if (this->encoder_a_change_) {
+        this->encoder_a_change_ = false;
+        this->poll_state_ = POLL_STATE_READY;
+        return log_raw_step(step_delta);
+      }
+      if (this->encoder_b_change_) {
+        this->encoder_b_change_ = false;
+        this->poll_state_ = POLL_STATE_READY;
+      }
+      break;
+
+    case POLL_STATE_CHECK:
+    default:
+      if (this->encoder_a_level_ == this->encoder_b_level_) {
+        this->poll_state_ = POLL_STATE_READY;
+        this->encoder_a_change_ = false;
+        this->encoder_b_change_ = false;
+      }
+      break;
+  }
+
+  return 0;
+}
+
+void VieweSmartRotaryEncoderSensor::publish_value_(bool force) {
+  if (!force && this->value_ == this->last_published_) {
+    return;
+  }
+  if (this->restore_mode_ == VIEWESMART_ROTARY_ENCODER_RESTORE_DEFAULT_ZERO) {
+    this->rtc_.save(&this->value_);
+  }
+  this->last_published_ = this->value_;
+  this->publish_state(this->value_);
+  this->listeners_.call(this->value_);
+}
+
+}  // namespace viewesmart_rotary_encoder
+}  // namespace esphome
