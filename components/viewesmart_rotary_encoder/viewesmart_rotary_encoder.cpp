@@ -173,8 +173,8 @@ void VieweSmartRotaryEncoderSensor::loop() {
       time_since_value_change = now - this->last_value_change_ms_;
     }
 
-    const uint32_t speed_reference_ms = this->smoothed_raw_step_interval_ms_ != UINT32_MAX
-                                            ? this->smoothed_raw_step_interval_ms_
+    const uint32_t speed_reference_ms = this->last_raw_step_interval_ms_ != UINT32_MAX
+                                            ? this->last_raw_step_interval_ms_
                                             : time_since_value_change;
     const bool high_speed_context = speed_reference_ms != UINT32_MAX &&
                                     speed_reference_ms <= FAST_REVERSE_FULL_CYCLE_THRESHOLD_MS;
