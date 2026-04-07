@@ -127,3 +127,5 @@ The included example at [examples/dial_display.yaml](/Users/grinderslev/Document
 - ESP-IDF only is the intended target for this first version.
 - The encoder queue is much larger than ESPHome's stock 8-slot event buffer, but hardware validation is still important for very aggressive spins.
 - If touch does not respond on your board revision, verify the I2C pins first and then try explicit `interrupt_pin` / `reset_pin` values from your board docs or logic trace.
+
+This README footer was updated on branch `codex/viewesmart-rotary-polling` to verify that the moved Codex workspace is still writable and connected correctly.
