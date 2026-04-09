@@ -1,9 +1,102 @@
 #include "viewesmart_touchscreen.h"
 
+#include <cmath>
+
 #include "esphome/core/helpers.h"
 
 namespace esphome {
 namespace viewesmart_touchscreen {
+
+void VieweSmartTouchscreen::start_swipe_(const touchscreen::TouchPoint &tp) {
+  this->swipe_.active = true;
+  this->swipe_.start_x = tp.x;
+  this->swipe_.start_y = tp.y;
+  this->swipe_.stable_x = tp.x;
+  this->swipe_.stable_y = tp.y;
+  this->swipe_.peak_x = tp.x;
+  this->swipe_.peak_y = tp.y;
+}
+
+void VieweSmartTouchscreen::update_swipe_(const touchscreen::TouchPoint &tp) {
+  if (!this->swipe_.active) {
+    this->start_swipe_(tp);
+    return;
+  }
+
+  const int dx_stable = static_cast<int>(tp.x) - static_cast<int>(this->swipe_.stable_x);
+  const int dy_stable = static_cast<int>(tp.y) - static_cast<int>(this->swipe_.stable_y);
+  const int settle_distance_sq =
+      static_cast<int>(this->swipe_settle_distance_px_) * static_cast<int>(this->swipe_settle_distance_px_);
+  if (dx_stable * dx_stable + dy_stable * dy_stable >= settle_distance_sq) {
+    this->swipe_.stable_x = tp.x;
+    this->swipe_.stable_y = tp.y;
+  }
+
+  const int dx_peak = static_cast<int>(this->swipe_.stable_x) - static_cast<int>(this->swipe_.start_x);
+  const int dy_peak = static_cast<int>(this->swipe_.stable_y) - static_cast<int>(this->swipe_.start_y);
+  const int current_distance_sq = dx_peak * dx_peak + dy_peak * dy_peak;
+
+  const int peak_dx = static_cast<int>(this->swipe_.peak_x) - static_cast<int>(this->swipe_.start_x);
+  const int peak_dy = static_cast<int>(this->swipe_.peak_y) - static_cast<int>(this->swipe_.start_y);
+  const int peak_distance_sq = peak_dx * peak_dx + peak_dy * peak_dy;
+  if (current_distance_sq >= peak_distance_sq) {
+    this->swipe_.peak_x = this->swipe_.stable_x;
+    this->swipe_.peak_y = this->swipe_.stable_y;
+  }
+}
+
+VieweSmartTouchscreen::SwipeDirection VieweSmartTouchscreen::finish_swipe_() {
+  if (!this->swipe_.active) {
+    return SWIPE_NONE;
+  }
+
+  const int dx = static_cast<int>(this->swipe_.peak_x) - static_cast<int>(this->swipe_.start_x);
+  const int dy = static_cast<int>(this->swipe_.peak_y) - static_cast<int>(this->swipe_.start_y);
+  const int abs_dx = std::abs(dx);
+  const int abs_dy = std::abs(dy);
+  const int major = std::max(abs_dx, abs_dy);
+  const int minor = std::min(abs_dx, abs_dy);
+
+  this->reset_swipe_();
+
+  if (major < this->swipe_min_distance_px_) {
+    return SWIPE_NONE;
+  }
+  if (static_cast<float>(major) < static_cast<float>(minor) * this->swipe_min_axis_ratio_) {
+    return SWIPE_NONE;
+  }
+
+  if (abs_dx > abs_dy) {
+    return dx < 0 ? SWIPE_LEFT : SWIPE_RIGHT;
+  }
+  return dy < 0 ? SWIPE_UP : SWIPE_DOWN;
+}
+
+void VieweSmartTouchscreen::reset_swipe_() { this->swipe_ = SwipeTracker(); }
+
+void VieweSmartTouchscreen::trigger_swipe_(SwipeDirection direction) {
+  switch (direction) {
+    case SWIPE_UP:
+      ESP_LOGD(TAG, "Swipe up detected");
+      this->swipe_up_trigger_.trigger();
+      break;
+    case SWIPE_DOWN:
+      ESP_LOGD(TAG, "Swipe down detected");
+      this->swipe_down_trigger_.trigger();
+      break;
+    case SWIPE_LEFT:
+      ESP_LOGD(TAG, "Swipe left detected");
+      this->swipe_left_trigger_.trigger();
+      break;
+    case SWIPE_RIGHT:
+      ESP_LOGD(TAG, "Swipe right detected");
+      this->swipe_right_trigger_.trigger();
+      break;
+    case SWIPE_NONE:
+    default:
+      break;
+  }
+}
 
 void VieweSmartTouchscreen::continue_setup_() {
   if (this->interrupt_pin_ != nullptr) {
@@ -54,6 +147,12 @@ void VieweSmartTouchscreen::continue_setup_() {
   if (this->y_raw_max_ == this->y_raw_min_) {
     this->y_raw_max_ = this->display_->get_native_height();
   }
+
+  const uint16_t min_dimension = std::min(this->display_->get_width(), this->display_->get_height());
+  this->swipe_min_distance_px_ =
+      this->swipe_min_distance_ > 0 ? this->swipe_min_distance_ : std::max<uint16_t>(24, min_dimension / 8);
+  this->swipe_settle_distance_px_ =
+      this->swipe_settle_distance_ > 0 ? this->swipe_settle_distance_ : std::max<uint16_t>(3, min_dimension / 48);
 }
 
 void VieweSmartTouchscreen::setup() {
@@ -79,6 +178,7 @@ void VieweSmartTouchscreen::update_touches() {
 
   const uint8_t num_touches = data[REG_TOUCH_NUM] & 0x03;
   if (num_touches == 0) {
+    this->trigger_swipe_(this->finish_swipe_());
     return;
   }
 
@@ -86,6 +186,10 @@ void VieweSmartTouchscreen::update_touches() {
   const uint16_t y = encode_uint16(data[REG_YPOS_HIGH] & 0x0F, data[REG_YPOS_LOW]);
   ESP_LOGV(TAG, "Touch %u,%u", x, y);
   this->add_raw_touch_position_(0, x, y);
+  auto it = this->touches_.find(0);
+  if (it != this->touches_.end()) {
+    this->update_swipe_(it->second);
+  }
 }
 
 void VieweSmartTouchscreen::dump_config() {
@@ -97,6 +201,9 @@ void VieweSmartTouchscreen::dump_config() {
   ESP_LOGCONFIG(TAG, "  Y Raw Min: %d, Y Raw Max: %d", this->y_raw_min_, this->y_raw_max_);
   ESP_LOGCONFIG(TAG, "  Skip Probe: %s", YESNO(this->skip_probe_));
   ESP_LOGCONFIG(TAG, "  Chip ID: 0x%02X", this->chip_id_);
+  ESP_LOGCONFIG(TAG, "  Swipe Min Distance: %u px", this->swipe_min_distance_px_);
+  ESP_LOGCONFIG(TAG, "  Swipe Settle Distance: %u px", this->swipe_settle_distance_px_);
+  ESP_LOGCONFIG(TAG, "  Swipe Min Axis Ratio: %.2f", this->swipe_min_axis_ratio_);
 }
 
 float VieweSmartTouchscreen::get_setup_priority() const { return setup_priority::IO; }

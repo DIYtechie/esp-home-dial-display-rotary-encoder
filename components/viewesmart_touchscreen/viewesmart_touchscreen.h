@@ -34,6 +34,14 @@ static const uint8_t CST836_CHIP_ID = 0x13;
 
 class VieweSmartTouchscreen : public touchscreen::Touchscreen, public i2c::I2CDevice {
  public:
+  enum SwipeDirection {
+    SWIPE_NONE = 0,
+    SWIPE_UP,
+    SWIPE_DOWN,
+    SWIPE_LEFT,
+    SWIPE_RIGHT,
+  };
+
   void setup() override;
   void update_touches() override;
   void dump_config() override;
@@ -42,16 +50,48 @@ class VieweSmartTouchscreen : public touchscreen::Touchscreen, public i2c::I2CDe
   void set_interrupt_pin(InternalGPIOPin *pin) { this->interrupt_pin_ = pin; }
   void set_reset_pin(GPIOPin *pin) { this->reset_pin_ = pin; }
   void set_skip_probe(bool skip_probe) { this->skip_probe_ = skip_probe; }
+  void set_swipe_min_distance(uint16_t swipe_min_distance) { this->swipe_min_distance_ = swipe_min_distance; }
+  void set_swipe_settle_distance(uint16_t swipe_settle_distance) { this->swipe_settle_distance_ = swipe_settle_distance; }
+  void set_swipe_min_axis_ratio(float swipe_min_axis_ratio) { this->swipe_min_axis_ratio_ = swipe_min_axis_ratio; }
+
+  Trigger<> *get_swipe_up_trigger() { return &this->swipe_up_trigger_; }
+  Trigger<> *get_swipe_down_trigger() { return &this->swipe_down_trigger_; }
+  Trigger<> *get_swipe_left_trigger() { return &this->swipe_left_trigger_; }
+  Trigger<> *get_swipe_right_trigger() { return &this->swipe_right_trigger_; }
 
  protected:
+  struct SwipeTracker {
+    bool active{false};
+    uint16_t start_x{0};
+    uint16_t start_y{0};
+    uint16_t stable_x{0};
+    uint16_t stable_y{0};
+    uint16_t peak_x{0};
+    uint16_t peak_y{0};
+  };
+
   void continue_setup_();
+  void start_swipe_(const touchscreen::TouchPoint &tp);
+  void update_swipe_(const touchscreen::TouchPoint &tp);
+  SwipeDirection finish_swipe_();
+  void reset_swipe_();
+  void trigger_swipe_(SwipeDirection direction);
 
   InternalGPIOPin *interrupt_pin_{nullptr};
   GPIOPin *reset_pin_{nullptr};
   uint8_t chip_id_{0};
   bool skip_probe_{false};
+  SwipeTracker swipe_;
+  uint16_t swipe_min_distance_{0};
+  uint16_t swipe_settle_distance_{0};
+  uint16_t swipe_min_distance_px_{0};
+  uint16_t swipe_settle_distance_px_{0};
+  float swipe_min_axis_ratio_{1.6f};
+  Trigger<> swipe_up_trigger_;
+  Trigger<> swipe_down_trigger_;
+  Trigger<> swipe_left_trigger_;
+  Trigger<> swipe_right_trigger_;
 };
 
 }  // namespace viewesmart_touchscreen
 }  // namespace esphome
-
