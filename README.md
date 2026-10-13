@@ -24,7 +24,7 @@ The [full dashboard YAML](examples/dial_display_dashboard.yaml) provides:
 
 The touchscreen and encoder components can also be used with your own UI. The example is a starting point based on my configuration, not a universal configuration for every receiver or TV.
 
-Tested with ESPHome 2026.3.2: both example configurations validate, and the full dashboard compiles for ESP32-S3. Physical behaviour still depends on your board and Home Assistant integrations.
+Tested with ESPHome 2026.9.1: both example configurations validate, and the full dashboard compiles for ESP32-S3. Home Assistant calls use the current `homeassistant.action` / `action` syntax. Physical behaviour still depends on your board and Home Assistant integrations.
 
 ### Run the full example
 

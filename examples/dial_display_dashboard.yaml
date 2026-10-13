@@ -430,8 +430,8 @@ script:
           condition:
             lambda: "return id(current_volume_percent) != id(last_sent_volume_percent);"
           then:
-            - homeassistant.service:
-                service: media_player.volume_set
+            - homeassistant.action:
+                action: media_player.volume_set
                 data:
                   entity_id: media_player.example_receiver
                   volume_level: !lambda "return id(current_volume_percent) / 100.0f;"
@@ -521,16 +521,16 @@ script:
                 condition:
                   lambda: "return !id(light_on) || id(current_brightness_percent) <= 0;"
                 then:
-                  - homeassistant.service:
-                      service: light.turn_off
+                  - homeassistant.action:
+                      action: light.turn_off
                       data:
                         entity_id: light.example_room
                   - lambda: |-
                       id(last_sent_light_on) = false;
                       id(last_sent_brightness_percent) = id(current_brightness_percent);
                 else:
-                  - homeassistant.service:
-                      service: light.turn_on
+                  - homeassistant.action:
+                      action: light.turn_on
                       data:
                         entity_id: light.example_room
                         brightness_pct: !lambda "return id(current_brightness_percent);"
@@ -599,8 +599,8 @@ script:
           condition:
             lambda: "return id(current_blinds_percent) != id(last_sent_blinds_percent);"
           then:
-            - homeassistant.service:
-                service: cover.set_cover_position
+            - homeassistant.action:
+                action: cover.set_cover_position
                 data:
                   entity_id: cover.example_blinds
                   position: !lambda "return id(current_blinds_percent);"
@@ -669,8 +669,8 @@ script:
           condition:
             lambda: "return id(current_skylights_percent) != id(last_sent_skylights_percent);"
           then:
-            - homeassistant.service:
-                service: cover.set_cover_position
+            - homeassistant.action:
+                action: cover.set_cover_position
                 data:
                   entity_id: cover.example_skylights
                   position: !lambda "return id(current_skylights_percent);"
@@ -694,16 +694,16 @@ script:
           id(apple_tv_assumed_playing) = !currently_playing;
           id(apple_tv_assumed_state_active) = true;
       - script.execute: update_apple_tv_transport_icon
-      - homeassistant.service:
-          service: media_player.media_play_pause
+      - homeassistant.action:
+          action: media_player.media_play_pause
           data:
             entity_id: media_player.example_apple_tv
 
   - id: send_apple_tv_left
     mode: restart
     then:
-      - homeassistant.service:
-          service: remote.send_command
+      - homeassistant.action:
+          action: remote.send_command
           data:
             entity_id: remote.example_apple_tv
             command: left
@@ -711,8 +711,8 @@ script:
   - id: send_apple_tv_right
     mode: restart
     then:
-      - homeassistant.service:
-          service: remote.send_command
+      - homeassistant.action:
+          action: remote.send_command
           data:
             entity_id: remote.example_apple_tv
             command: right
@@ -720,8 +720,8 @@ script:
   - id: send_apple_tv_menu
     mode: restart
     then:
-      - homeassistant.service:
-          service: remote.send_command
+      - homeassistant.action:
+          action: remote.send_command
           data:
             entity_id: remote.example_apple_tv
             command: menu
@@ -729,16 +729,16 @@ script:
   - id: send_tv_power_off
     mode: restart
     then:
-      - homeassistant.service:
-          service: button.press
+      - homeassistant.action:
+          action: button.press
           data:
             entity_id: button.example_tv_power_off
 
   - id: send_tv_menu
     mode: restart
     then:
-      - homeassistant.service:
-          service: remote.send_command
+      - homeassistant.action:
+          action: remote.send_command
           data:
             entity_id: remote.example_tv
             device: Example_TV
@@ -747,8 +747,8 @@ script:
   - id: send_tv_ok
     mode: restart
     then:
-      - homeassistant.service:
-          service: remote.send_command
+      - homeassistant.action:
+          action: remote.send_command
           data:
             entity_id: remote.example_tv
             device: Example_TV
@@ -757,16 +757,16 @@ script:
   - id: toggle_skylight_blinds
     mode: restart
     then:
-      - homeassistant.service:
-          service: cover.toggle
+      - homeassistant.action:
+          action: cover.toggle
           data:
             entity_id: cover.example_skylight_blinds
 
   - id: toggle_room_loft
     mode: restart
     then:
-      - homeassistant.service:
-          service: script.example_toggle_ceiling_light
+      - homeassistant.action:
+          action: script.example_toggle_ceiling_light
 
   - id: update_clock_pages
     mode: restart
@@ -984,8 +984,8 @@ script:
     then:
       - lambda: |-
           id(last_local_source_change_ms) = millis();
-      - homeassistant.service:
-          service: media_player.select_source
+      - homeassistant.action:
+          action: media_player.select_source
           data:
             entity_id: media_player.example_receiver
             source: !lambda |-
