@@ -1,0 +1,3736 @@
+# Full dashboard example. Replace example entities and source names before use.
+external_components:
+  - source:
+      type: local
+      path: ../components
+    refresh: 0s
+    components:
+      - viewesmart_rotary_encoder
+      - viewesmart_knob_button
+      - viewesmart_touchscreen
+
+image:
+  - id: volume_prevplaynext_icon
+    file: prevplaynext.png
+    type: RGB565
+    transparency: chroma_key
+  - id: volume_prevpausenext_icon
+    file: prevpausenext.png
+    type: RGB565
+    transparency: chroma_key
+
+font:
+  - file: "gfonts://Montserrat"
+    id: digital_clock_font_96
+    size: 96
+    bpp: 4
+
+
+esphome:
+  name: dial-display
+  friendly_name: Dial Display
+  on_boot:
+    priority: -100
+    then:
+      - lambda: |-
+          id(current_volume_percent) = 50;
+          id(current_brightness_percent) = 100;
+          id(current_blinds_percent) = 90;
+          id(current_skylights_percent) = 90;
+          id(current_input_selection) = 1;
+          id(last_input_encoder_value) = 17;
+          id(light_on) = true;
+          id(blinds_open) = true;
+          id(skylights_open) = true;
+      - sensor.viewesmart_rotary_encoder.set_value:
+          id: knob_encoder
+          value: 50
+      - sensor.viewesmart_rotary_encoder.set_acceleration_mode:
+          id: knob_encoder
+          acceleration_mode: LOW
+
+      - lvgl.arc.update:
+          id: volume_arc
+          value: 50
+          indicator:
+            arc_color: 0x7005FC
+      - lvgl.label.update:
+          id: volume_value
+          text: "50 %"
+          text_font: montserrat_48
+          y: 200
+
+      - lvgl.arc.update:
+          id: brightness_arc
+          value: 100
+          indicator:
+            arc_color: 0xFFC34D
+      - lvgl.label.update:
+          id: brightness_value
+          text: "100 %"
+      - lvgl.label.update:
+          id: brightness_title
+          text: "LIGHTS"
+
+      - script.execute: update_blinds_ui
+      - lvgl.label.update:
+          id: blinds_title
+          text: "BLINDS"
+          y: 0
+      - script.execute: update_skylights_ui
+      - lvgl.label.update:
+          id: skylights_title
+          text: "SKYLIGHTS"
+          y: 0
+      - script.execute: update_input_ui
+      - lvgl.label.update:
+          id: input_title
+          text: "SOURCE"
+          y: 0
+
+      - lvgl.page.show: volume_page
+      - lambda: |-
+          id(display_enabled) = true;
+          id(round_display).set_brightness(id(display_brightness));
+          id(last_user_interaction_ms) = millis();
+      - lvgl.resume:
+      - script.execute: update_apple_tv_transport_icon
+      - number.set:
+          id: display_brightness_slider
+          value: !lambda "return id(display_brightness);"
+      - delay: 5s
+      - script.execute: sync_room_blinds_to_display
+      - script.execute: sync_skylights_to_display
+      - script.execute: sync_selected_source_to_display
+      - script.execute: update_clock_pages
+
+esp32:
+  board: esp32-s3-devkitc-1
+  framework:
+    type: esp-idf
+
+logger:
+
+api:
+  encryption:
+    key: !secret api_encryption_key
+
+ota:
+  - platform: esphome
+    password: !secret ota_password
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  ap:
+    ssid: "Dial-Display Fallback Hotspot"
+    password: !secret fallback_password
+
+captive_portal:
+
+time:
+  - platform: homeassistant
+    id: homeassistant_time
+    on_time:
+      - seconds: /1
+        then:
+          - script.execute: update_clock_pages
+
+psram:
+  mode: octal
+  speed: 80MHz
+
+globals:
+  - id: current_volume_percent
+    type: int
+    restore_value: no
+    initial_value: "50"
+
+  - id: current_brightness_percent
+    type: int
+    restore_value: no
+    initial_value: "100"
+
+  - id: current_blinds_percent
+    type: int
+    restore_value: no
+    initial_value: "90"
+
+  - id: current_skylights_percent
+    type: int
+    restore_value: no
+    initial_value: "90"
+
+  - id: current_input_selection
+    type: int
+    restore_value: no
+    initial_value: "1"
+
+  - id: last_input_encoder_value
+    type: int
+    restore_value: no
+    initial_value: "17"
+
+  - id: syncing_local
+    type: bool
+    restore_value: no
+    initial_value: "false"
+
+  - id: max_volume_percent
+    type: int
+    restore_value: no
+    initial_value: "70"
+
+  - id: page_menu_active
+    type: bool
+    restore_value: no
+    initial_value: "false"
+
+  - id: page_menu_selection
+    type: int
+    restore_value: no
+    initial_value: "0"
+
+  - id: page_menu_origin
+    type: int
+    restore_value: no
+    initial_value: "0"
+
+  - id: page_menu_encoder_value
+    type: int
+    restore_value: no
+    initial_value: "50"
+
+  - id: page_menu_drag_active
+    type: bool
+    restore_value: no
+    initial_value: "false"
+
+  - id: page_menu_drag_start_x
+    type: int
+    restore_value: no
+    initial_value: "0"
+
+  - id: page_menu_drag_start_y
+    type: int
+    restore_value: no
+    initial_value: "0"
+
+  - id: page_menu_drag_offset
+    type: int
+    restore_value: no
+    initial_value: "0"
+
+  - id: page_menu_drag_snap_steps
+    type: int
+    restore_value: no
+    initial_value: "0"
+
+  - id: page_menu_selection_changed
+    type: bool
+    restore_value: no
+    initial_value: "false"
+
+  - id: light_on
+    type: bool
+    restore_value: no
+    initial_value: "true"
+
+  - id: blinds_open
+    type: bool
+    restore_value: no
+    initial_value: "true"
+
+  - id: skylights_open
+    type: bool
+    restore_value: no
+    initial_value: "true"
+
+  - id: touch_mode_switch_ready
+    type: bool
+    restore_value: no
+    initial_value: "true"
+
+  - id: center_touch_tap_pending
+    type: bool
+    restore_value: no
+    initial_value: "false"
+
+  - id: tv_touch_tap_pending
+    type: bool
+    restore_value: no
+    initial_value: "false"
+
+  - id: tv_touch_sector
+    type: int
+    restore_value: no
+    initial_value: "0"
+
+  - id: last_local_volume_change_ms
+    type: uint32_t
+    restore_value: no
+    initial_value: "0"
+
+  - id: last_local_brightness_change_ms
+    type: uint32_t
+    restore_value: no
+    initial_value: "0"
+
+  - id: last_local_blinds_change_ms
+    type: uint32_t
+    restore_value: no
+    initial_value: "0"
+
+  - id: last_local_skylights_change_ms
+    type: uint32_t
+    restore_value: no
+    initial_value: "0"
+
+  - id: last_local_source_change_ms
+    type: uint32_t
+    restore_value: no
+    initial_value: "0"
+
+  - id: blinds_sync_block_ms
+    type: uint32_t
+    restore_value: no
+    initial_value: "60000"
+
+  - id: last_sent_volume_percent
+    type: int
+    restore_value: no
+    initial_value: "-1"
+
+  - id: last_sent_brightness_percent
+    type: int
+    restore_value: no
+    initial_value: "-1"
+
+  - id: last_sent_light_on
+    type: bool
+    restore_value: no
+    initial_value: "false"
+
+  - id: last_sent_blinds_percent
+    type: int
+    restore_value: no
+    initial_value: "-1"
+
+  - id: last_sent_skylights_percent
+    type: int
+    restore_value: no
+    initial_value: "-1"
+
+  - id: display_enabled
+    type: bool
+    restore_value: no
+    initial_value: "true"
+
+  - id: display_brightness
+    type: int
+    restore_value: no
+    initial_value: "208"
+
+  - id: last_user_interaction_ms
+    type: uint32_t
+    restore_value: no
+    initial_value: "0"
+
+  - id: display_idle_timeout_ms
+    type: uint32_t
+    restore_value: no
+    initial_value: "600000"
+
+  - id: apple_tv_assumed_state_active
+    type: bool
+    restore_value: no
+    initial_value: "false"
+
+  - id: apple_tv_assumed_playing
+    type: bool
+    restore_value: no
+    initial_value: "false"
+
+script:
+  - id: wake_display_if_needed
+    mode: restart
+    then:
+      - if:
+          condition:
+            lambda: "return !id(display_enabled);"
+          then:
+            - switch.turn_on: display_power_switch
+
+  - id: update_apple_tv_transport_icon
+    mode: restart
+    then:
+      - if:
+          condition:
+            lambda: |-
+              if (id(apple_tv_assumed_state_active)) {
+                return id(apple_tv_assumed_playing);
+              }
+              return id(apple_tv_state).has_state() &&
+                     id(apple_tv_state).state == "playing";
+          then:
+            - lvgl.image.update:
+                id: volume_play_pause_badge
+                src: volume_prevpausenext_icon
+          else:
+            - lvgl.image.update:
+                id: volume_play_pause_badge
+                src: volume_prevplaynext_icon
+
+  - id: mark_display_activity
+    mode: restart
+    then:
+      - lambda: |-
+          id(last_user_interaction_ms) = millis();
+  - id: sync_receiver_volume_to_display
+    mode: restart
+    then:
+      - if:
+          condition:
+            lambda: |-
+              if (isnan(id(receiver_volume_level).state)) {
+                return false;
+              }
+              const uint32_t now = millis();
+              if ((now - id(last_local_volume_change_ms)) < 2000) {
+                return false;
+              }
+              int v = (int) lroundf(id(receiver_volume_level).state * 100.0f);
+              if (v < 0) v = 0;
+              if (v > 100) v = 100;
+              return v != id(current_volume_percent);
+          then:
+            - lambda: |-
+                int v = (int) lroundf(id(receiver_volume_level).state * 100.0f);
+                if (v < 0) v = 0;
+                if (v > 100) v = 100;
+                id(current_volume_percent) = v;
+                id(last_sent_volume_percent) = v;
+            - if:
+                condition:
+                  lvgl.page.is_showing: volume_page
+                then:
+                  - lambda: "id(syncing_local) = true;"
+                  - sensor.viewesmart_rotary_encoder.set_acceleration_mode:
+                      id: knob_encoder
+                      acceleration_mode: LOW
+                  - sensor.viewesmart_rotary_encoder.set_value:
+                      id: knob_encoder
+                      value: !lambda "return id(current_volume_percent);"
+                  - script.execute: update_volume_ui
+
+  - id: send_receiver_volume_if_changed
+    mode: restart
+    then:
+      - if:
+          condition:
+            lambda: "return id(current_volume_percent) != id(last_sent_volume_percent);"
+          then:
+            - homeassistant.service:
+                service: media_player.volume_set
+                data:
+                  entity_id: media_player.example_receiver
+                  volume_level: !lambda "return id(current_volume_percent) / 100.0f;"
+            - lambda: "id(last_sent_volume_percent) = id(current_volume_percent);"
+
+  - id: send_receiver_volume_debounced
+    mode: restart
+    then:
+      - delay: 100ms
+      - script.execute: send_receiver_volume_if_changed
+
+  - id: sync_room_brightness_to_display
+    mode: restart
+    then:
+      - if:
+          condition:
+            lambda: |-
+              if (!id(room_light_is_on).has_state()) {
+                return false;
+              }
+              const uint32_t now = millis();
+              if ((now - id(last_local_brightness_change_ms)) < 2000) {
+                return false;
+              }
+
+              const bool desired_on = id(room_light_is_on).state;
+              int desired_brightness = id(current_brightness_percent);
+
+              if (desired_on && !isnan(id(room_light_brightness).state)) {
+                desired_brightness = (int) lroundf((id(room_light_brightness).state / 255.0f) * 100.0f);
+              }
+
+              if (desired_brightness < 0) desired_brightness = 0;
+              if (desired_brightness > 100) desired_brightness = 100;
+              desired_brightness = ((desired_brightness + 1) / 2) * 2;
+
+              return desired_on != id(light_on) ||
+                     (desired_on && desired_brightness != id(current_brightness_percent));
+          then:
+            - lambda: |-
+                const bool desired_on = id(room_light_is_on).state;
+                int desired_brightness = id(current_brightness_percent);
+
+                if (desired_on && !isnan(id(room_light_brightness).state)) {
+                  desired_brightness = (int) lroundf((id(room_light_brightness).state / 255.0f) * 100.0f);
+                }
+
+                if (desired_brightness < 0) desired_brightness = 0;
+                if (desired_brightness > 100) desired_brightness = 100;
+                desired_brightness = ((desired_brightness + 1) / 2) * 2;
+
+                id(light_on) = desired_on;
+                if (desired_on) {
+                  id(current_brightness_percent) = desired_brightness;
+                  id(last_sent_brightness_percent) = desired_brightness;
+                }
+                id(last_sent_light_on) = desired_on;
+            - if:
+                condition:
+                  lvgl.page.is_showing: brightness_page
+                then:
+                  - lambda: "id(syncing_local) = true;"
+                  - sensor.viewesmart_rotary_encoder.set_acceleration_mode:
+                      id: knob_encoder
+                      acceleration_mode: HIGH
+                  - sensor.viewesmart_rotary_encoder.set_value:
+                      id: knob_encoder
+                      value: !lambda "return id(current_brightness_percent);"
+                  - script.execute: update_brightness_ui
+
+  - id: reconcile_room_brightness_after_local
+    mode: restart
+    then:
+      - delay: 2s
+      - script.execute: sync_room_brightness_to_display
+
+  - id: send_room_light_if_changed
+    mode: restart
+    then:
+      - if:
+          condition:
+            lambda: |-
+              return id(light_on) != id(last_sent_light_on) ||
+                     (id(light_on) && id(current_brightness_percent) != id(last_sent_brightness_percent));
+          then:
+            - if:
+                condition:
+                  lambda: "return !id(light_on) || id(current_brightness_percent) <= 0;"
+                then:
+                  - homeassistant.service:
+                      service: light.turn_off
+                      data:
+                        entity_id: light.example_room
+                  - lambda: |-
+                      id(last_sent_light_on) = false;
+                      id(last_sent_brightness_percent) = id(current_brightness_percent);
+                else:
+                  - homeassistant.service:
+                      service: light.turn_on
+                      data:
+                        entity_id: light.example_room
+                        brightness_pct: !lambda "return id(current_brightness_percent);"
+                  - lambda: |-
+                      id(last_sent_light_on) = true;
+                      id(last_sent_brightness_percent) = id(current_brightness_percent);
+
+  - id: send_room_light_debounced
+    mode: restart
+    then:
+      - delay: 100ms
+      - script.execute: send_room_light_if_changed
+
+  - id: sync_room_blinds_to_display
+    mode: restart
+    then:
+      - if:
+          condition:
+            lambda: |-
+              if (isnan(id(room_blinds_position).state)) {
+                return false;
+              }
+
+              const uint32_t now = millis();
+              if ((now - id(last_local_blinds_change_ms)) < id(blinds_sync_block_ms)) {
+                return false;
+              }
+
+              if (id(room_blinds_state).has_state()) {
+                if (id(room_blinds_state).state == "opening" || id(room_blinds_state).state == "closing") {
+                  return false;
+                }
+              }
+
+              int v = (int) lroundf(id(room_blinds_position).state);
+              if (v < 0) v = 0;
+              if (v > 100) v = 100;
+              v = ((v + 1) / 2) * 2;
+              return v != id(current_blinds_percent);
+          then:
+            - lambda: |-
+                int v = (int) lroundf(id(room_blinds_position).state);
+                if (v < 0) v = 0;
+                if (v > 100) v = 100;
+                v = ((v + 1) / 2) * 2;
+                id(current_blinds_percent) = v;
+                id(blinds_open) = (v > 0);
+                id(last_sent_blinds_percent) = v;
+            - if:
+                condition:
+                  lvgl.page.is_showing: blinds_page
+                then:
+                  - lambda: "id(syncing_local) = true;"
+                  - sensor.viewesmart_rotary_encoder.set_acceleration_mode:
+                      id: knob_encoder
+                      acceleration_mode: HIGH
+                  - sensor.viewesmart_rotary_encoder.set_value:
+                      id: knob_encoder
+                      value: !lambda "return id(current_blinds_percent);"
+                  - script.execute: update_blinds_ui
+
+  - id: send_room_blinds_if_changed
+    mode: restart
+    then:
+      - if:
+          condition:
+            lambda: "return id(current_blinds_percent) != id(last_sent_blinds_percent);"
+          then:
+            - homeassistant.service:
+                service: cover.set_cover_position
+                data:
+                  entity_id: cover.example_blinds
+                  position: !lambda "return id(current_blinds_percent);"
+            - lambda: |-
+                id(last_sent_blinds_percent) = id(current_blinds_percent);
+                id(blinds_open) = (id(current_blinds_percent) > 0);
+
+  - id: send_room_blinds_debounced
+    mode: restart
+    then:
+      - delay: 400ms
+      - script.execute: send_room_blinds_if_changed
+
+  - id: sync_skylights_to_display
+    mode: restart
+    then:
+      - if:
+          condition:
+            lambda: |-
+              if (isnan(id(skylights_position).state)) {
+                return false;
+              }
+
+              const uint32_t now = millis();
+              if ((now - id(last_local_skylights_change_ms)) < id(blinds_sync_block_ms)) {
+                return false;
+              }
+
+              if (id(skylights_state).has_state()) {
+                if (id(skylights_state).state == "opening" || id(skylights_state).state == "closing") {
+                  return false;
+                }
+              }
+
+              int v = (int) lroundf(id(skylights_position).state);
+              if (v < 0) v = 0;
+              if (v > 100) v = 100;
+              v = ((v + 1) / 2) * 2;
+              return v != id(current_skylights_percent);
+          then:
+            - lambda: |-
+                int v = (int) lroundf(id(skylights_position).state);
+                if (v < 0) v = 0;
+                if (v > 100) v = 100;
+                v = ((v + 1) / 2) * 2;
+                id(current_skylights_percent) = v;
+                id(skylights_open) = (v > 0);
+                id(last_sent_skylights_percent) = v;
+            - if:
+                condition:
+                  lvgl.page.is_showing: skylights_page
+                then:
+                  - lambda: "id(syncing_local) = true;"
+                  - sensor.viewesmart_rotary_encoder.set_acceleration_mode:
+                      id: knob_encoder
+                      acceleration_mode: HIGH
+                  - sensor.viewesmart_rotary_encoder.set_value:
+                      id: knob_encoder
+                      value: !lambda "return id(current_skylights_percent);"
+                  - script.execute: update_skylights_ui
+
+  - id: send_skylights_if_changed
+    mode: restart
+    then:
+      - if:
+          condition:
+            lambda: "return id(current_skylights_percent) != id(last_sent_skylights_percent);"
+          then:
+            - homeassistant.service:
+                service: cover.set_cover_position
+                data:
+                  entity_id: cover.example_skylights
+                  position: !lambda "return id(current_skylights_percent);"
+            - lambda: |-
+                id(last_sent_skylights_percent) = id(current_skylights_percent);
+                id(skylights_open) = (id(current_skylights_percent) > 0);
+
+  - id: send_skylights_debounced
+    mode: restart
+    then:
+      - delay: 400ms
+      - script.execute: send_skylights_if_changed
+
+  - id: send_apple_tv_play_pause
+    mode: restart
+    then:
+      - lambda: |-
+          bool currently_playing = id(apple_tv_assumed_state_active)
+                                     ? id(apple_tv_assumed_playing)
+                                     : (id(apple_tv_state).has_state() && id(apple_tv_state).state == "playing");
+          id(apple_tv_assumed_playing) = !currently_playing;
+          id(apple_tv_assumed_state_active) = true;
+      - script.execute: update_apple_tv_transport_icon
+      - homeassistant.service:
+          service: media_player.media_play_pause
+          data:
+            entity_id: media_player.example_apple_tv
+
+  - id: send_apple_tv_left
+    mode: restart
+    then:
+      - homeassistant.service:
+          service: remote.send_command
+          data:
+            entity_id: remote.example_apple_tv
+            command: left
+
+  - id: send_apple_tv_right
+    mode: restart
+    then:
+      - homeassistant.service:
+          service: remote.send_command
+          data:
+            entity_id: remote.example_apple_tv
+            command: right
+
+  - id: send_apple_tv_menu
+    mode: restart
+    then:
+      - homeassistant.service:
+          service: remote.send_command
+          data:
+            entity_id: remote.example_apple_tv
+            command: menu
+
+  - id: send_tv_power_off
+    mode: restart
+    then:
+      - homeassistant.service:
+          service: button.press
+          data:
+            entity_id: button.example_tv_power_off
+
+  - id: send_tv_menu
+    mode: restart
+    then:
+      - homeassistant.service:
+          service: remote.send_command
+          data:
+            entity_id: remote.example_tv
+            device: Example_TV
+            command: Menu
+
+  - id: send_tv_ok
+    mode: restart
+    then:
+      - homeassistant.service:
+          service: remote.send_command
+          data:
+            entity_id: remote.example_tv
+            device: Example_TV
+            command: OK/select
+
+  - id: toggle_skylight_blinds
+    mode: restart
+    then:
+      - homeassistant.service:
+          service: cover.toggle
+          data:
+            entity_id: cover.example_skylight_blinds
+
+  - id: toggle_room_loft
+    mode: restart
+    then:
+      - homeassistant.service:
+          service: script.example_toggle_ceiling_light
+
+  - id: update_clock_pages
+    mode: restart
+    then:
+      - lvgl.label.update:
+          id: digital_clock_value
+          text: !lambda |-
+            if (!id(homeassistant_time).now().is_valid()) {
+              return std::string("--:--");
+            }
+            auto now = id(homeassistant_time).now();
+            char buf[6];
+            snprintf(buf, sizeof(buf), "%02d:%02d", now.hour, now.minute);
+            return std::string(buf);
+      - lvgl.line.update:
+          id: analog_hour_hand
+          points:
+            - x: 233
+              y: 233
+            - x: !lambda |-
+                float angle = -90.0f;
+                if (id(homeassistant_time).now().is_valid()) {
+                  auto now = id(homeassistant_time).now();
+                  angle = ((now.hour % 12) + (now.minute / 60.0f)) * 30.0f - 90.0f;
+                }
+                return (int) lroundf(233.0f + cosf(angle * 3.14159265f / 180.0f) * 98.0f);
+              y: !lambda |-
+                float angle = -90.0f;
+                if (id(homeassistant_time).now().is_valid()) {
+                  auto now = id(homeassistant_time).now();
+                  angle = ((now.hour % 12) + (now.minute / 60.0f)) * 30.0f - 90.0f;
+                }
+                return (int) lroundf(233.0f + sinf(angle * 3.14159265f / 180.0f) * 98.0f);
+      - lvgl.line.update:
+          id: analog_minute_hand
+          points:
+            - x: 233
+              y: 233
+            - x: !lambda |-
+                float angle = -90.0f;
+                if (id(homeassistant_time).now().is_valid()) {
+                  auto now = id(homeassistant_time).now();
+                  angle = now.minute * 6.0f - 90.0f;
+                }
+                return (int) lroundf(233.0f + cosf(angle * 3.14159265f / 180.0f) * 150.0f);
+              y: !lambda |-
+                float angle = -90.0f;
+                if (id(homeassistant_time).now().is_valid()) {
+                  auto now = id(homeassistant_time).now();
+                  angle = now.minute * 6.0f - 90.0f;
+                }
+                return (int) lroundf(233.0f + sinf(angle * 3.14159265f / 180.0f) * 150.0f);
+
+  - id: update_volume_ui
+    mode: restart
+    then:
+      - lvgl.arc.update:
+          id: volume_arc
+          value: !lambda "return id(current_volume_percent);"
+          indicator:
+            arc_color: 0x7005FC
+      - lvgl.label.update:
+          id: volume_value
+          text: !lambda |-
+            char buf[8];
+            snprintf(buf, sizeof(buf), "%d %%", id(current_volume_percent));
+            return std::string(buf);
+          text_font: montserrat_48
+          y: 200
+
+  - id: update_brightness_ui
+    mode: restart
+    then:
+      - lvgl.arc.update:
+          id: brightness_arc
+          value: !lambda "return id(current_brightness_percent);"
+          indicator:
+            arc_color: !lambda |-
+              return id(light_on) ? lv_color_hex(0xFFC34D) : lv_color_hex(0x6A6A6A);
+      - lvgl.label.update:
+          id: brightness_value
+          text: !lambda |-
+            if (!id(light_on)) {
+              return std::string("OFF");
+            }
+            char buf[8];
+            snprintf(buf, sizeof(buf), "%d %%", id(current_brightness_percent));
+            return std::string(buf);
+
+  - id: update_blinds_ui
+    mode: restart
+    then:
+      - lvgl.arc.update:
+          id: blinds_arc_left
+          start_angle: 120
+          end_angle: !lambda |-
+            float visible_half = id(current_blinds_percent) * 1.5f;
+            return (int) lroundf(120.0f + visible_half);
+      - lvgl.arc.update:
+          id: blinds_arc_right
+          start_angle: !lambda |-
+            float visible_half = id(current_blinds_percent) * 1.5f;
+            int angle = (int) lroundf(60.0f - visible_half);
+            if (angle < 0) angle += 360;
+            return angle;
+          end_angle: 60
+      - lvgl.label.update:
+          id: blinds_value
+          text: !lambda |-
+            char buf[8];
+            snprintf(buf, sizeof(buf), "%d %%", id(current_blinds_percent));
+            return std::string(buf);
+          y: 200
+
+  - id: update_skylights_ui
+    mode: restart
+    then:
+      - lvgl.arc.update:
+          id: skylights_arc_left
+          start_angle: 120
+          end_angle: !lambda |-
+            float visible_half = id(current_skylights_percent) * 1.5f;
+            return (int) lroundf(120.0f + visible_half);
+      - lvgl.arc.update:
+          id: skylights_arc_right
+          start_angle: !lambda |-
+            float visible_half = id(current_skylights_percent) * 1.5f;
+            int angle = (int) lroundf(60.0f - visible_half);
+            if (angle < 0) angle += 360;
+            return angle;
+          end_angle: 60
+      - lvgl.label.update:
+          id: skylights_value
+          text: !lambda |-
+            char buf[8];
+            snprintf(buf, sizeof(buf), "%d %%", id(current_skylights_percent));
+            return std::string(buf);
+          y: 200
+
+  - id: update_input_ui
+    mode: restart
+    then:
+      - lvgl.arc.update:
+          id: input_arc_1_active
+          arc_opa: !lambda "return id(current_input_selection) == 1 ? LV_OPA_COVER : LV_OPA_TRANSP;"
+      - lvgl.arc.update:
+          id: input_arc_2_active
+          arc_opa: !lambda "return id(current_input_selection) == 2 ? LV_OPA_COVER : LV_OPA_TRANSP;"
+      - lvgl.arc.update:
+          id: input_arc_3_active
+          arc_opa: !lambda "return id(current_input_selection) == 3 ? LV_OPA_COVER : LV_OPA_TRANSP;"
+      - lvgl.label.update:
+          id: input_label_1
+          text_color: !lambda "return id(current_input_selection) == 1 ? lv_color_hex(0xFFFFFF) : lv_color_hex(0x7A7A7A);"
+      - lvgl.label.update:
+          id: input_label_2
+          text_color: !lambda "return id(current_input_selection) == 2 ? lv_color_hex(0xFFFFFF) : lv_color_hex(0x7A7A7A);"
+      - lvgl.label.update:
+          id: input_label_3
+          text_color: !lambda "return id(current_input_selection) == 3 ? lv_color_hex(0xFFFFFF) : lv_color_hex(0x7A7A7A);"
+
+  - id: sync_selected_source_to_display
+    mode: restart
+    then:
+      - if:
+          condition:
+            lambda: |-
+              if (!id(receiver_source).has_state()) {
+                return false;
+              }
+              if ((millis() - id(last_local_source_change_ms)) < 2000) {
+                return false;
+              }
+              return id(receiver_source).state == "Game Console" ||
+                     id(receiver_source).state == "Apple TV" ||
+                     id(receiver_source).state == "Camera";
+          then:
+            - lambda: |-
+                int desired = id(current_input_selection);
+                if (id(receiver_source).state == "Game Console") {
+                  desired = 1;
+                } else if (id(receiver_source).state == "Apple TV") {
+                  desired = 2;
+                } else if (id(receiver_source).state == "Camera") {
+                  desired = 3;
+                }
+
+                if (desired == id(current_input_selection)) {
+                  return;
+                }
+
+                id(current_input_selection) = desired;
+            - script.execute: update_input_ui
+            - if:
+                condition:
+                  lvgl.page.is_showing: input_page
+                then:
+                  - lambda: "id(syncing_local) = true;"
+                  - sensor.viewesmart_rotary_encoder.set_acceleration_mode:
+                      id: knob_encoder
+                      acceleration_mode: LOW
+                  - sensor.viewesmart_rotary_encoder.set_value:
+                      id: knob_encoder
+                      value: !lambda |-
+                        if (id(current_input_selection) == 1) return 17;
+                        if (id(current_input_selection) == 2) return 50;
+                        return 83;
+                  - lambda: |-
+                      if (id(current_input_selection) == 1) id(last_input_encoder_value) = 17;
+                      else if (id(current_input_selection) == 2) id(last_input_encoder_value) = 50;
+                      else id(last_input_encoder_value) = 83;
+
+  - id: send_selected_source
+    mode: restart
+    then:
+      - lambda: |-
+          id(last_local_source_change_ms) = millis();
+      - homeassistant.service:
+          service: media_player.select_source
+          data:
+            entity_id: media_player.example_receiver
+            source: !lambda |-
+              if (id(current_input_selection) == 1) {
+                return std::string("Game Console");
+              }
+              if (id(current_input_selection) == 2) {
+                return std::string("Apple TV");
+              }
+              return std::string("Camera");
+
+  - id: cycle_mode
+    mode: restart
+    then:
+      - if:
+          condition:
+            lvgl.page.is_showing: volume_page
+          then:
+            - lvgl.page.show:
+                id: brightness_page
+            - lambda: "id(syncing_local) = true;"
+            - sensor.viewesmart_rotary_encoder.set_acceleration_mode:
+                id: knob_encoder
+                acceleration_mode: HIGH
+            - sensor.viewesmart_rotary_encoder.set_value:
+                id: knob_encoder
+                value: !lambda "return id(current_brightness_percent);"
+            - script.execute: update_brightness_ui
+          else:
+            - if:
+                condition:
+                  lvgl.page.is_showing: brightness_page
+                then:
+                  - lvgl.page.show:
+                      id: blinds_page
+                  - lambda: "id(syncing_local) = true;"
+                  - sensor.viewesmart_rotary_encoder.set_acceleration_mode:
+                      id: knob_encoder
+                      acceleration_mode: HIGH
+                  - sensor.viewesmart_rotary_encoder.set_value:
+                      id: knob_encoder
+                      value: !lambda "return id(current_blinds_percent);"
+                  - script.execute: update_blinds_ui
+                else:
+                  - if:
+                      condition:
+                        lvgl.page.is_showing: blinds_page
+                      then:
+                        - lvgl.page.show:
+                            id: skylights_page
+                        - lambda: "id(syncing_local) = true;"
+                        - sensor.viewesmart_rotary_encoder.set_acceleration_mode:
+                            id: knob_encoder
+                            acceleration_mode: HIGH
+                        - sensor.viewesmart_rotary_encoder.set_value:
+                            id: knob_encoder
+                            value: !lambda "return id(current_skylights_percent);"
+                        - script.execute: update_skylights_ui
+                      else:
+                        - if:
+                            condition:
+                              lvgl.page.is_showing: skylights_page
+                            then:
+                              - lvgl.page.show:
+                                  id: tv_page
+                              - lambda: "id(syncing_local) = true;"
+                              - sensor.viewesmart_rotary_encoder.set_acceleration_mode:
+                                  id: knob_encoder
+                                  acceleration_mode: LOW
+                              - sensor.viewesmart_rotary_encoder.set_value:
+                                  id: knob_encoder
+                                  value: 50
+                            else:
+                              - if:
+                                  condition:
+                                    lvgl.page.is_showing: tv_page
+                                  then:
+                                    - lvgl.page.show:
+                                        id: analog_clock_page
+                                    - lambda: "id(syncing_local) = true;"
+                                    - sensor.viewesmart_rotary_encoder.set_acceleration_mode:
+                                        id: knob_encoder
+                                        acceleration_mode: LOW
+                                    - sensor.viewesmart_rotary_encoder.set_value:
+                                        id: knob_encoder
+                                        value: 50
+                                    - script.execute: update_clock_pages
+                                  else:
+                                    - if:
+                                        condition:
+                                          lvgl.page.is_showing: analog_clock_page
+                                        then:
+                                          - lvgl.page.show:
+                                              id: digital_clock_page
+                                          - lambda: "id(syncing_local) = true;"
+                                          - sensor.viewesmart_rotary_encoder.set_acceleration_mode:
+                                              id: knob_encoder
+                                              acceleration_mode: LOW
+                                          - sensor.viewesmart_rotary_encoder.set_value:
+                                              id: knob_encoder
+                                              value: 50
+                                          - script.execute: update_clock_pages
+                                        else:
+                                          - if:
+                                              condition:
+                                                lvgl.page.is_showing: digital_clock_page
+                                              then:
+                                                - lvgl.page.show:
+                                                    id: input_page
+                                                - lambda: "id(syncing_local) = true;"
+                                                - sensor.viewesmart_rotary_encoder.set_acceleration_mode:
+                                                    id: knob_encoder
+                                                    acceleration_mode: LOW
+                                                - sensor.viewesmart_rotary_encoder.set_value:
+                                                    id: knob_encoder
+                                                    value: !lambda |-
+                                                      if (id(current_input_selection) == 1) return 17;
+                                                      if (id(current_input_selection) == 2) return 50;
+                                                      return 83;
+                                                - lambda: |-
+                                                    if (id(current_input_selection) == 1) id(last_input_encoder_value) = 17;
+                                                    else if (id(current_input_selection) == 2) id(last_input_encoder_value) = 50;
+                                                    else id(last_input_encoder_value) = 83;
+                                                - script.execute: update_input_ui
+                                              else:
+                                                - lvgl.page.show:
+                                                    id: volume_page
+                                                - lambda: "id(syncing_local) = true;"
+                                                - sensor.viewesmart_rotary_encoder.set_acceleration_mode:
+                                                    id: knob_encoder
+                                                    acceleration_mode: LOW
+                                                - sensor.viewesmart_rotary_encoder.set_value:
+                                                    id: knob_encoder
+                                                    value: !lambda "return id(current_volume_percent);"
+                                                - script.execute: update_volume_ui
+
+  - id: cycle_mode_reverse
+    mode: restart
+    then:
+      - if:
+          condition:
+            lvgl.page.is_showing: volume_page
+          then:
+            - lvgl.page.show:
+                id: input_page
+            - lambda: "id(syncing_local) = true;"
+            - sensor.viewesmart_rotary_encoder.set_acceleration_mode:
+                id: knob_encoder
+                acceleration_mode: LOW
+            - sensor.viewesmart_rotary_encoder.set_value:
+                id: knob_encoder
+                value: !lambda |-
+                  if (id(current_input_selection) == 1) return 17;
+                  if (id(current_input_selection) == 2) return 50;
+                  return 83;
+            - lambda: |-
+                if (id(current_input_selection) == 1) id(last_input_encoder_value) = 17;
+                else if (id(current_input_selection) == 2) id(last_input_encoder_value) = 50;
+                else id(last_input_encoder_value) = 83;
+            - script.execute: update_input_ui
+          else:
+            - if:
+                condition:
+                  lvgl.page.is_showing: brightness_page
+                then:
+                  - lvgl.page.show:
+                      id: volume_page
+                  - lambda: "id(syncing_local) = true;"
+                  - sensor.viewesmart_rotary_encoder.set_acceleration_mode:
+                      id: knob_encoder
+                      acceleration_mode: LOW
+                  - sensor.viewesmart_rotary_encoder.set_value:
+                      id: knob_encoder
+                      value: !lambda "return id(current_volume_percent);"
+                  - script.execute: update_volume_ui
+                else:
+                  - if:
+                      condition:
+                        lvgl.page.is_showing: blinds_page
+                      then:
+                        - lvgl.page.show:
+                            id: brightness_page
+                        - lambda: "id(syncing_local) = true;"
+                        - sensor.viewesmart_rotary_encoder.set_acceleration_mode:
+                            id: knob_encoder
+                            acceleration_mode: HIGH
+                        - sensor.viewesmart_rotary_encoder.set_value:
+                            id: knob_encoder
+                            value: !lambda "return id(current_brightness_percent);"
+                        - script.execute: update_brightness_ui
+                      else:
+                        - if:
+                            condition:
+                              lvgl.page.is_showing: skylights_page
+                            then:
+                              - lvgl.page.show:
+                                  id: blinds_page
+                              - lambda: "id(syncing_local) = true;"
+                              - sensor.viewesmart_rotary_encoder.set_acceleration_mode:
+                                  id: knob_encoder
+                                  acceleration_mode: HIGH
+                              - sensor.viewesmart_rotary_encoder.set_value:
+                                  id: knob_encoder
+                                  value: !lambda "return id(current_blinds_percent);"
+                              - script.execute: update_blinds_ui
+                            else:
+                              - if:
+                                      condition:
+                                        lvgl.page.is_showing: tv_page
+                                      then:
+                                        - lvgl.page.show:
+                                            id: skylights_page
+                                        - lambda: "id(syncing_local) = true;"
+                                        - sensor.viewesmart_rotary_encoder.set_acceleration_mode:
+                                            id: knob_encoder
+                                            acceleration_mode: HIGH
+                                        - sensor.viewesmart_rotary_encoder.set_value:
+                                            id: knob_encoder
+                                            value: !lambda "return id(current_skylights_percent);"
+                                        - script.execute: update_skylights_ui
+                                      else:
+                                        - if:
+                                            condition:
+                                              lvgl.page.is_showing: analog_clock_page
+                                            then:
+                                              - lvgl.page.show:
+                                                  id: tv_page
+                                              - lambda: "id(syncing_local) = true;"
+                                              - sensor.viewesmart_rotary_encoder.set_acceleration_mode:
+                                                  id: knob_encoder
+                                                  acceleration_mode: LOW
+                                              - sensor.viewesmart_rotary_encoder.set_value:
+                                                  id: knob_encoder
+                                                  value: 50
+                                            else:
+                                              - if:
+                                                  condition:
+                                                    lvgl.page.is_showing: digital_clock_page
+                                                  then:
+                                                    - lvgl.page.show:
+                                                        id: analog_clock_page
+                                                    - lambda: "id(syncing_local) = true;"
+                                                    - sensor.viewesmart_rotary_encoder.set_acceleration_mode:
+                                                        id: knob_encoder
+                                                        acceleration_mode: LOW
+                                                    - sensor.viewesmart_rotary_encoder.set_value:
+                                                        id: knob_encoder
+                                                        value: 50
+                                                    - script.execute: update_clock_pages
+                                                  else:
+                                                    - if:
+                                                        condition:
+                                                          lvgl.page.is_showing: input_page
+                                                        then:
+                                                          - lvgl.page.show:
+                                                              id: digital_clock_page
+                                                          - lambda: "id(syncing_local) = true;"
+                                                          - sensor.viewesmart_rotary_encoder.set_acceleration_mode:
+                                                              id: knob_encoder
+                                                              acceleration_mode: LOW
+                                                          - sensor.viewesmart_rotary_encoder.set_value:
+                                                              id: knob_encoder
+                                                              value: 50
+                                                          - script.execute: update_clock_pages
+                                                        else:
+                                                          - lvgl.page.show:
+                                                              id: input_page
+                                                          - lambda: "id(syncing_local) = true;"
+                                                          - sensor.viewesmart_rotary_encoder.set_acceleration_mode:
+                                                              id: knob_encoder
+                                                              acceleration_mode: LOW
+                                                          - sensor.viewesmart_rotary_encoder.set_value:
+                                                              id: knob_encoder
+                                                              value: !lambda |-
+                                                                if (id(current_input_selection) == 1) return 17;
+                                                                if (id(current_input_selection) == 2) return 50;
+                                                                return 83;
+                                                          - lambda: |-
+                                                              if (id(current_input_selection) == 1) id(last_input_encoder_value) = 17;
+                                                              else if (id(current_input_selection) == 2) id(last_input_encoder_value) = 50;
+                                                              else id(last_input_encoder_value) = 83;
+                                                          - script.execute: update_input_ui
+
+  - id: update_page_menu_drag_styles
+    mode: restart
+    then:
+      - lambda: |-
+          lv_obj_t *labels[] = {
+            id(page_menu_item_minus_3),
+            id(page_menu_item_minus_2),
+            id(page_menu_item_minus_1),
+            id(page_menu_item_selected),
+            id(page_menu_item_plus_1),
+            id(page_menu_item_plus_2),
+            id(page_menu_item_plus_3),
+          };
+          const int positions[] = {-216, -144, -72, 0, 72, 144, 216};
+
+          for (int i = 0; i < 7; i++) {
+            const int y = positions[i] + id(page_menu_drag_offset);
+            const int distance = std::abs(y);
+            const lv_font_t *font;
+            if (distance < 33) {
+              font = &lv_font_montserrat_42;
+            } else if (distance < 98) {
+              font = &lv_font_montserrat_32;
+            } else if (distance < 163) {
+              font = &lv_font_montserrat_28;
+            } else {
+              font = &lv_font_montserrat_24;
+            }
+
+            int shade;
+            if (distance <= 65) {
+              shade = 255 - (136 * distance / 65);
+            } else if (distance <= 130) {
+              shade = 119 - (50 * (distance - 65) / 65);
+            } else if (distance <= 195) {
+              shade = 69 - (33 * (distance - 130) / 65);
+            } else {
+              shade = 36;
+            }
+
+            lv_obj_set_y(labels[i], y);
+            lv_obj_set_style_text_font(labels[i], font, LV_PART_MAIN);
+            lv_obj_set_style_text_color(labels[i], lv_color_make(shade, shade, shade), LV_PART_MAIN);
+          }
+
+  - id: update_page_menu_ui
+    mode: restart
+    then:
+      - lambda: |-
+          static const char *const names[] = {
+            "VOLUME", "LIGHTS", "BLINDS", "SKYLIGHTS",
+            "SOURCE", "TV", "ANALOG CLOCK", "DIGITAL CLOCK"
+          };
+          lv_obj_t *labels[] = {
+            id(page_menu_item_minus_3),
+            id(page_menu_item_minus_2),
+            id(page_menu_item_minus_1),
+            id(page_menu_item_selected),
+            id(page_menu_item_plus_1),
+            id(page_menu_item_plus_2),
+            id(page_menu_item_plus_3),
+          };
+          const int relative_indices[] = {-3, -2, -1, 0, 1, 2, 3};
+          for (int i = 0; i < 7; i++) {
+            const int index =
+                (id(page_menu_selection) + relative_indices[i] + 8) % 8;
+            lv_label_set_text(labels[i], names[index]);
+          }
+      - script.execute: update_page_menu_drag_styles
+
+  - id: finish_page_menu_drag
+    mode: restart
+    then:
+      - lambda: |-
+          id(page_menu_drag_active) = false;
+          int steps = 0;
+          if (id(page_menu_drag_offset) <= -24) {
+            steps = 1;
+          } else if (id(page_menu_drag_offset) >= 24) {
+            steps = -1;
+          }
+          id(page_menu_drag_snap_steps) = steps;
+
+          const int target = -steps * 65;
+          lv_anim_t animation;
+          lv_anim_init(&animation);
+          lv_anim_set_var(&animation, id(page_menu_list_track));
+          lv_anim_set_values(&animation, id(page_menu_drag_offset), target);
+          lv_anim_set_time(&animation, 130);
+          lv_anim_set_path_cb(&animation, lv_anim_path_ease_out);
+          lv_anim_set_exec_cb(&animation, [](void *object, int32_t value) {
+            id(page_menu_drag_offset) = value;
+            lv_obj_t *labels[] = {
+              id(page_menu_item_minus_3),
+              id(page_menu_item_minus_2),
+              id(page_menu_item_minus_1),
+              id(page_menu_item_selected),
+              id(page_menu_item_plus_1),
+              id(page_menu_item_plus_2),
+              id(page_menu_item_plus_3),
+            };
+            const int positions[] = {-216, -144, -72, 0, 72, 144, 216};
+
+            for (int i = 0; i < 7; i++) {
+              const int y = positions[i] + value;
+              const int distance = std::abs(y);
+              const lv_font_t *font;
+              if (distance < 33) {
+                font = &lv_font_montserrat_42;
+              } else if (distance < 98) {
+                font = &lv_font_montserrat_32;
+              } else if (distance < 163) {
+                font = &lv_font_montserrat_28;
+              } else {
+                font = &lv_font_montserrat_24;
+              }
+
+              int shade;
+              if (distance <= 65) {
+                shade = 255 - (136 * distance / 65);
+              } else if (distance <= 130) {
+                shade = 119 - (50 * (distance - 65) / 65);
+              } else if (distance <= 195) {
+                shade = 69 - (33 * (distance - 130) / 65);
+              } else {
+                shade = 36;
+              }
+
+              lv_obj_set_y(labels[i], y);
+              lv_obj_set_style_text_font(labels[i], font, LV_PART_MAIN);
+              lv_obj_set_style_text_color(
+                  labels[i], lv_color_make(shade, shade, shade), LV_PART_MAIN);
+            }
+          });
+          lv_anim_start(&animation);
+      - delay: 140ms
+      - lambda: |-
+          id(page_menu_selection) =
+              (id(page_menu_selection) + id(page_menu_drag_snap_steps) + 80) % 8;
+          id(page_menu_drag_offset) = 0;
+          id(page_menu_drag_snap_steps) = 0;
+      - script.execute: update_page_menu_ui
+
+  - id: open_page_menu
+    mode: restart
+    then:
+      - if:
+          condition:
+            lvgl.page.is_showing: volume_page
+          then:
+            - lambda: "id(page_menu_selection) = 0;"
+      - if:
+          condition:
+            lvgl.page.is_showing: brightness_page
+          then:
+            - lambda: "id(page_menu_selection) = 1;"
+      - if:
+          condition:
+            lvgl.page.is_showing: blinds_page
+          then:
+            - lambda: "id(page_menu_selection) = 2;"
+      - if:
+          condition:
+            lvgl.page.is_showing: skylights_page
+          then:
+            - lambda: "id(page_menu_selection) = 3;"
+      - if:
+          condition:
+            lvgl.page.is_showing: input_page
+          then:
+            - lambda: "id(page_menu_selection) = 4;"
+      - if:
+          condition:
+            lvgl.page.is_showing: tv_page
+          then:
+            - lambda: "id(page_menu_selection) = 5;"
+      - if:
+          condition:
+            lvgl.page.is_showing: analog_clock_page
+          then:
+            - lambda: "id(page_menu_selection) = 6;"
+      - if:
+          condition:
+            lvgl.page.is_showing: digital_clock_page
+          then:
+            - lambda: "id(page_menu_selection) = 7;"
+      - lambda: |-
+          id(page_menu_origin) = id(page_menu_selection);
+          id(page_menu_active) = true;
+          id(page_menu_drag_active) = false;
+          id(page_menu_drag_offset) = 0;
+      - lvgl.page.show:
+          id: page_menu_page
+      - lvgl.obj.update:
+          id: page_menu_list_track
+          y: 0
+      - script.execute: update_page_menu_ui
+      - lambda: |-
+          id(syncing_local) = true;
+          id(page_menu_encoder_value) = 50;
+      - sensor.viewesmart_rotary_encoder.set_acceleration_mode:
+          id: knob_encoder
+          acceleration_mode: LOW
+      - sensor.viewesmart_rotary_encoder.set_value:
+          id: knob_encoder
+          value: 50
+
+  - id: show_page_menu_selection
+    mode: restart
+    then:
+      - lambda: |-
+          id(page_menu_active) = false;
+          id(page_menu_drag_active) = false;
+          id(page_menu_drag_offset) = 0;
+      - if:
+          condition:
+            lambda: "return id(page_menu_selection) == 0;"
+          then:
+            - lvgl.page.show:
+                id: volume_page
+            - lambda: "id(syncing_local) = true;"
+            - sensor.viewesmart_rotary_encoder.set_acceleration_mode:
+                id: knob_encoder
+                acceleration_mode: LOW
+            - sensor.viewesmart_rotary_encoder.set_value:
+                id: knob_encoder
+                value: !lambda "return id(current_volume_percent);"
+            - script.execute: update_volume_ui
+          else:
+            - if:
+                condition:
+                  lambda: "return id(page_menu_selection) == 1;"
+                then:
+                  - lvgl.page.show:
+                      id: brightness_page
+                  - lambda: "id(syncing_local) = true;"
+                  - sensor.viewesmart_rotary_encoder.set_acceleration_mode:
+                      id: knob_encoder
+                      acceleration_mode: HIGH
+                  - sensor.viewesmart_rotary_encoder.set_value:
+                      id: knob_encoder
+                      value: !lambda "return id(current_brightness_percent);"
+                  - script.execute: update_brightness_ui
+                else:
+                  - if:
+                      condition:
+                        lambda: "return id(page_menu_selection) == 2;"
+                      then:
+                        - lvgl.page.show:
+                            id: blinds_page
+                        - lambda: "id(syncing_local) = true;"
+                        - sensor.viewesmart_rotary_encoder.set_acceleration_mode:
+                            id: knob_encoder
+                            acceleration_mode: HIGH
+                        - sensor.viewesmart_rotary_encoder.set_value:
+                            id: knob_encoder
+                            value: !lambda "return id(current_blinds_percent);"
+                        - script.execute: update_blinds_ui
+                      else:
+                        - if:
+                            condition:
+                              lambda: "return id(page_menu_selection) == 3;"
+                            then:
+                              - lvgl.page.show:
+                                  id: skylights_page
+                              - lambda: "id(syncing_local) = true;"
+                              - sensor.viewesmart_rotary_encoder.set_acceleration_mode:
+                                  id: knob_encoder
+                                  acceleration_mode: HIGH
+                              - sensor.viewesmart_rotary_encoder.set_value:
+                                  id: knob_encoder
+                                  value: !lambda "return id(current_skylights_percent);"
+                              - script.execute: update_skylights_ui
+                            else:
+                              - if:
+                                  condition:
+                                    lambda: "return id(page_menu_selection) == 4;"
+                                  then:
+                                    - lvgl.page.show:
+                                        id: input_page
+                                    - lambda: "id(syncing_local) = true;"
+                                    - sensor.viewesmart_rotary_encoder.set_acceleration_mode:
+                                        id: knob_encoder
+                                        acceleration_mode: LOW
+                                    - sensor.viewesmart_rotary_encoder.set_value:
+                                        id: knob_encoder
+                                        value: !lambda |-
+                                          if (id(current_input_selection) == 1) return 17;
+                                          if (id(current_input_selection) == 2) return 50;
+                                          return 83;
+                                    - lambda: |-
+                                        if (id(current_input_selection) == 1) id(last_input_encoder_value) = 17;
+                                        else if (id(current_input_selection) == 2) id(last_input_encoder_value) = 50;
+                                        else id(last_input_encoder_value) = 83;
+                                    - script.execute: update_input_ui
+                                  else:
+                                    - if:
+                                        condition:
+                                          lambda: "return id(page_menu_selection) == 5;"
+                                        then:
+                                          - lvgl.page.show:
+                                              id: tv_page
+                                          - lambda: "id(syncing_local) = true;"
+                                          - sensor.viewesmart_rotary_encoder.set_acceleration_mode:
+                                              id: knob_encoder
+                                              acceleration_mode: LOW
+                                          - sensor.viewesmart_rotary_encoder.set_value:
+                                              id: knob_encoder
+                                              value: 50
+                                        else:
+                                          - if:
+                                              condition:
+                                                lambda: "return id(page_menu_selection) == 6;"
+                                              then:
+                                                - lvgl.page.show:
+                                                    id: analog_clock_page
+                                                - lambda: "id(syncing_local) = true;"
+                                                - sensor.viewesmart_rotary_encoder.set_acceleration_mode:
+                                                    id: knob_encoder
+                                                    acceleration_mode: LOW
+                                                - sensor.viewesmart_rotary_encoder.set_value:
+                                                    id: knob_encoder
+                                                    value: 50
+                                                - script.execute: update_clock_pages
+                                              else:
+                                                - lvgl.page.show:
+                                                    id: digital_clock_page
+                                                - lambda: "id(syncing_local) = true;"
+                                                - sensor.viewesmart_rotary_encoder.set_acceleration_mode:
+                                                    id: knob_encoder
+                                                    acceleration_mode: LOW
+                                                - sensor.viewesmart_rotary_encoder.set_value:
+                                                    id: knob_encoder
+                                                    value: 50
+                                                - script.execute: update_clock_pages
+
+  - id: handle_page_menu_long_press
+    mode: restart
+    then:
+      - delay: 900ms
+      - if:
+          condition:
+            binary_sensor.is_on: knob_button
+          then:
+            - if:
+                condition:
+                  lambda: "return id(page_menu_active);"
+                then:
+                  - lambda: "id(page_menu_selection) = id(page_menu_origin);"
+                  - script.execute: show_page_menu_selection
+                else:
+                  - script.execute: open_page_menu
+
+  - id: handle_knob_double_click
+    mode: restart
+    then:
+      - if:
+          condition:
+            lvgl.page.is_showing: volume_page
+          then:
+            - script.execute: send_apple_tv_menu
+          else:
+            - if:
+                condition:
+                  lvgl.page.is_showing: brightness_page
+                then:
+                  - script.execute: toggle_room_loft
+                else:
+                  - if:
+                      condition:
+                        lvgl.page.is_showing: blinds_page
+                      then:
+                        - script.execute: toggle_skylight_blinds
+
+  - id: handle_knob_single_click
+    mode: restart
+    then:
+      - if:
+          condition:
+            lvgl.page.is_showing: volume_page
+          then:
+            - script.execute: send_apple_tv_play_pause
+          else:
+            - if:
+                condition:
+                  lvgl.page.is_showing: brightness_page
+                then:
+                  - lambda: |-
+                      id(light_on) = !id(light_on);
+                      if (id(light_on) && id(current_brightness_percent) == 0) {
+                        id(current_brightness_percent) = 100;
+                      }
+                      id(last_local_brightness_change_ms) = millis();
+                  - script.execute: update_brightness_ui
+                  - script.execute: send_room_light_if_changed
+                  - script.execute: reconcile_room_brightness_after_local
+                else:
+                  - if:
+                      condition:
+                        lvgl.page.is_showing: blinds_page
+                      then:
+                        - lambda: |-
+                            if (id(blinds_open)) {
+                              id(current_blinds_percent) = 0;
+                              id(blinds_open) = false;
+                            } else {
+                              id(current_blinds_percent) = 100;
+                              id(blinds_open) = true;
+                            }
+                            id(last_local_blinds_change_ms) = millis();
+                        - lambda: "id(syncing_local) = true;"
+                        - sensor.viewesmart_rotary_encoder.set_acceleration_mode:
+                            id: knob_encoder
+                            acceleration_mode: HIGH
+                        - sensor.viewesmart_rotary_encoder.set_value:
+                            id: knob_encoder
+                            value: !lambda "return id(current_blinds_percent);"
+                        - script.execute: update_blinds_ui
+                        - script.execute: send_room_blinds_debounced
+                      else:
+                        - if:
+                            condition:
+                              lvgl.page.is_showing: skylights_page
+                            then:
+                              - lambda: |-
+                                  if (id(skylights_open)) {
+                                    id(current_skylights_percent) = 0;
+                                    id(skylights_open) = false;
+                                  } else {
+                                    id(current_skylights_percent) = 100;
+                                    id(skylights_open) = true;
+                                  }
+                                  id(last_local_skylights_change_ms) = millis();
+                              - lambda: "id(syncing_local) = true;"
+                              - sensor.viewesmart_rotary_encoder.set_acceleration_mode:
+                                  id: knob_encoder
+                                  acceleration_mode: HIGH
+                              - sensor.viewesmart_rotary_encoder.set_value:
+                                  id: knob_encoder
+                                  value: !lambda "return id(current_skylights_percent);"
+                              - script.execute: update_skylights_ui
+                              - script.execute: send_skylights_debounced
+
+  - id: rearm_touch_mode_switch
+    mode: restart
+    then:
+      - delay: 350ms
+      - lambda: "id(touch_mode_switch_ready) = true;"
+
+  - id: handle_tv_touch_tap
+    mode: restart
+    then:
+      - delay: 225ms
+      - if:
+          condition:
+            lambda: "return id(tv_touch_tap_pending);"
+          then:
+            - lambda: "id(tv_touch_tap_pending) = false;"
+            - if:
+                condition:
+                  lambda: "return id(tv_touch_sector) == 1;"
+                then:
+                  - script.execute: send_tv_menu
+                else:
+                  - if:
+                      condition:
+                        lambda: "return id(tv_touch_sector) == 2;"
+                      then:
+                        - script.execute: send_tv_power_off
+                      else:
+                        - if:
+                            condition:
+                              lambda: "return id(tv_touch_sector) == 3;"
+                            then:
+                              - script.execute: send_tv_ok
+
+  - id: handle_center_touch_tap
+    mode: restart
+    then:
+      - delay: 225ms
+      - if:
+          condition:
+            lambda: |-
+              return id(center_touch_tap_pending) && id(touch_mode_switch_ready);
+          then:
+            - lambda: |-
+                id(center_touch_tap_pending) = false;
+                id(touch_mode_switch_ready) = false;
+            - if:
+                condition:
+                  lambda: "return id(page_menu_active);"
+                then:
+                  - script.execute: show_page_menu_selection
+                else:
+                  - if:
+                      condition:
+                        lvgl.page.is_showing: volume_page
+                      then:
+                        - logger.log: "CENTER TAP PLAY/PAUSE"
+                        - script.execute: send_apple_tv_play_pause
+                      else:
+                        - logger.log: "CENTER TAP"
+            - script.execute: rearm_touch_mode_switch
+
+i2c:
+  sda: GPIO1
+  scl: GPIO3
+  scan: true
+
+spi:
+  id: display_qspi
+  type: quad
+  clk_pin: GPIO10
+  data_pins: [GPIO13, GPIO11, GPIO14, GPIO9]
+
+display:
+  - platform: mipi_spi
+    id: round_display
+    model: CO5300
+    bus_mode: quad
+    cs_pin: GPIO12
+    reset_pin: GPIO8
+    enable_pin: GPIO17
+    dimensions:
+      width: 466
+      height: 466
+      offset_width: 6
+    update_interval: never
+    auto_clear_enabled: false
+    color_order: rgb
+
+sensor:
+  - platform: homeassistant
+    id: receiver_volume_level
+    entity_id: media_player.example_receiver
+    attribute: volume_level
+    internal: true
+    accuracy_decimals: 2
+    on_value:
+      then:
+        - script.execute: sync_receiver_volume_to_display
+
+  - platform: homeassistant
+    id: room_light_brightness
+    entity_id: light.example_room
+    attribute: brightness
+    internal: true
+    accuracy_decimals: 0
+    on_value:
+      then:
+        - script.execute: sync_room_brightness_to_display
+
+  - platform: homeassistant
+    id: room_blinds_position
+    entity_id: cover.example_blinds
+    attribute: current_position
+    internal: true
+    accuracy_decimals: 0
+    on_value:
+      then:
+        - script.execute: sync_room_blinds_to_display
+
+  - platform: homeassistant
+    id: skylights_position
+    entity_id: cover.example_skylights
+    attribute: current_position
+    internal: true
+    accuracy_decimals: 0
+    on_value:
+      then:
+        - script.execute: sync_skylights_to_display
+
+  - platform: viewesmart_rotary_encoder
+    id: knob_encoder
+    name: "Knob value"
+    pin_a:
+      number: GPIO6
+      mode:
+        input: true
+        pullup: true
+    pin_b:
+      number: GPIO5
+      mode:
+        input: true
+        pullup: true
+    resolution: 2
+    min_value: 0
+    max_value: 100
+    restore_mode: ALWAYS_ZERO
+    publish_initial_value: true
+    acceleration_mode: HIGH
+
+    on_value:
+      then:
+        - script.execute: wake_display_if_needed
+        - script.execute: mark_display_activity
+        - if:
+            condition:
+              lambda: |-
+                if (!id(syncing_local)) return false;
+
+                int expected = 50;
+                if (id(page_menu_active)) {
+                  expected = id(page_menu_encoder_value);
+                } else if (id(brightness_page)->is_showing()) {
+                  expected = id(current_brightness_percent);
+                } else if (id(blinds_page)->is_showing()) {
+                  expected = id(current_blinds_percent);
+                } else if (id(skylights_page)->is_showing()) {
+                  expected = id(current_skylights_percent);
+                } else if (id(input_page)->is_showing()) {
+                  expected = id(last_input_encoder_value);
+                } else if (id(volume_page)->is_showing()) {
+                  expected = std::min(id(current_volume_percent), id(max_volume_percent));
+                }
+
+                id(syncing_local) = false;
+                return ((int) x) == expected;
+            then:
+              - lambda: |-
+                  // Ignore only the value published by a programmatic set_value.
+                  return;
+            else:
+              - if:
+                  condition:
+                    lvgl.page.is_showing: brightness_page
+                  then:
+                    - if:
+                        condition:
+                          lambda: |-
+                            const int raw = (int) x;
+                            int current = ((id(current_brightness_percent) + 1) / 2) * 2;
+                            int v = current;
+                            if (raw > current) v = std::min(100, current + 2);
+                            else if (raw < current) v = std::max(0, current - 2);
+                            return v != id(current_brightness_percent) || (v == 0 && id(light_on)) || (v > 0 && !id(light_on));
+                        then:
+                          - lambda: |-
+                              const int raw = (int) x;
+                              int current = ((id(current_brightness_percent) + 1) / 2) * 2;
+                              int v = current;
+                              if (raw > current) v = std::min(100, current + 2);
+                              else if (raw < current) v = std::max(0, current - 2);
+                              id(current_brightness_percent) = v;
+                              id(light_on) = (v > 0);
+                              id(last_local_brightness_change_ms) = millis();
+                          - lambda: "id(syncing_local) = true;"
+                          - sensor.viewesmart_rotary_encoder.set_value:
+                              id: knob_encoder
+                              value: !lambda "return id(current_brightness_percent);"
+                          - script.execute: update_brightness_ui
+                          - script.execute: send_room_light_debounced
+                          - script.execute: reconcile_room_brightness_after_local
+                  else:
+                    - if:
+                        condition:
+                          lvgl.page.is_showing: blinds_page
+                        then:
+                          - if:
+                              condition:
+                                lambda: |-
+                                  const int raw = (int) x;
+                                  int current = ((id(current_blinds_percent) + 1) / 2) * 2;
+                                  int v = current;
+                                  if (raw > current) v = std::min(100, current + 2);
+                                  else if (raw < current) v = std::max(0, current - 2);
+                                  return v != id(current_blinds_percent);
+                              then:
+                                - lambda: |-
+                                    const int raw = (int) x;
+                                    int current = ((id(current_blinds_percent) + 1) / 2) * 2;
+                                    int v = current;
+                                    if (raw > current) v = std::min(100, current + 2);
+                                    else if (raw < current) v = std::max(0, current - 2);
+                                    id(current_blinds_percent) = v;
+                                    id(blinds_open) = (v > 0);
+                                    id(last_local_blinds_change_ms) = millis();
+                                - lambda: "id(syncing_local) = true;"
+                                - sensor.viewesmart_rotary_encoder.set_value:
+                                    id: knob_encoder
+                                    value: !lambda "return id(current_blinds_percent);"
+                                - script.execute: update_blinds_ui
+                                - script.execute: send_room_blinds_debounced
+                        else:
+                          - if:
+                              condition:
+                                lvgl.page.is_showing: skylights_page
+                              then:
+                                - if:
+                                    condition:
+                                      lambda: |-
+                                        const int raw = (int) x;
+                                        int current = ((id(current_skylights_percent) + 1) / 2) * 2;
+                                        int v = current;
+                                        if (raw > current) v = std::min(100, current + 2);
+                                        else if (raw < current) v = std::max(0, current - 2);
+                                        return v != id(current_skylights_percent);
+                                    then:
+                                      - lambda: |-
+                                          const int raw = (int) x;
+                                          int current = ((id(current_skylights_percent) + 1) / 2) * 2;
+                                          int v = current;
+                                          if (raw > current) v = std::min(100, current + 2);
+                                          else if (raw < current) v = std::max(0, current - 2);
+                                          id(current_skylights_percent) = v;
+                                          id(skylights_open) = (v > 0);
+                                          id(last_local_skylights_change_ms) = millis();
+                                      - lambda: "id(syncing_local) = true;"
+                                      - sensor.viewesmart_rotary_encoder.set_value:
+                                          id: knob_encoder
+                                          value: !lambda "return id(current_skylights_percent);"
+                                      - script.execute: update_skylights_ui
+                                      - script.execute: send_skylights_debounced
+                              else:
+                                - if:
+                                    condition:
+                                      lvgl.page.is_showing: input_page
+                                    then:
+                                      - if:
+                                          condition:
+                                            lambda: |-
+                                              return ((int) x) != id(last_input_encoder_value);
+                                          then:
+                                            - lambda: |-
+                                                const int raw = (int) x;
+                                                const int delta = raw - id(last_input_encoder_value);
+                                                bool changed = false;
+                                                if (delta > 0 && id(current_input_selection) < 3) {
+                                                  id(current_input_selection) += 1;
+                                                  changed = true;
+                                                } else if (delta < 0 && id(current_input_selection) > 1) {
+                                                  id(current_input_selection) -= 1;
+                                                  changed = true;
+                                                }
+                                                id(last_input_encoder_value) = raw;
+                                                if (!changed) {
+                                                  return;
+                                                }
+                                            - script.execute: update_input_ui
+                                            - script.execute: send_selected_source
+                                    else:
+                                      - if:
+                                          condition:
+                                            lvgl.page.is_showing: tv_page
+                                          then:
+                                            - lambda: |-
+                                                return;
+                                          else:
+                                            - if:
+                                                condition:
+                                                  lvgl.page.is_showing: analog_clock_page
+                                                then:
+                                                  - lambda: |-
+                                                      return;
+                                                else:
+                                                  - if:
+                                                      condition:
+                                                        lvgl.page.is_showing: digital_clock_page
+                                                      then:
+                                                        - lambda: |-
+                                                            return;
+                                                      else:
+                                                        - if:
+                                                            condition:
+                                                              lambda: |-
+                                                                return id(page_menu_active);
+                                                            then:
+                                                              - lambda: |-
+                                                                  const int raw = (int) x;
+                                                                  const int delta = raw - id(page_menu_encoder_value);
+                                                                  id(page_menu_encoder_value) = raw;
+                                                                  if (id(knob_button).state) {
+                                                                    return;
+                                                                  }
+                                                                  if (delta > 0) {
+                                                                    id(page_menu_selection) = (id(page_menu_selection) + 7) % 8;
+                                                                  } else if (delta < 0) {
+                                                                    id(page_menu_selection) = (id(page_menu_selection) + 1) % 8;
+                                                                  } else {
+                                                                    return;
+                                                                  }
+                                                              - script.execute: update_page_menu_ui
+                                                            else:
+                                                              - if:
+                                                                  condition:
+                                                                    lambda: |-
+                                                                      int raw = (int) x;
+                                                                      int v = raw;
+                                                                      if (v < 0) v = 0;
+                                                                      if (v > id(max_volume_percent)) v = id(max_volume_percent);
+                                                                      return v != id(current_volume_percent) || raw > id(max_volume_percent);
+                                                                  then:
+                                                                    - lambda: |-
+                                                                        int raw = (int) x;
+                                                                        int v = raw;
+                                                                        if (v < 0) v = 0;
+                                                                        if (v > id(max_volume_percent)) v = id(max_volume_percent);
+                                                                        if (v != id(current_volume_percent)) {
+                                                                          id(current_volume_percent) = v;
+                                                                          id(last_local_volume_change_ms) = millis();
+                                                                        }
+                                                                    - if:
+                                                                        condition:
+                                                                          lambda: "return (int)x > id(max_volume_percent);"
+                                                                        then:
+                                                                          - lambda: "id(syncing_local) = true;"
+                                                                          - sensor.viewesmart_rotary_encoder.set_value:
+                                                                              id: knob_encoder
+                                                                              value: !lambda "return id(max_volume_percent);"
+                                                                    - script.execute: update_volume_ui
+                                                                    - script.execute: send_receiver_volume_debounced
+
+number:
+  - platform: template
+    id: display_brightness_slider
+    name: "Dial Display Brightness"
+    optimistic: true
+    restore_value: true
+    initial_value: 208
+    min_value: 0
+    max_value: 255
+    step: 1
+    mode: slider
+    set_action:
+      - lambda: |-
+          id(display_brightness) = (int) x;
+          if (id(display_enabled)) {
+            id(round_display).set_brightness(id(display_brightness));
+          }
+
+switch:
+  - platform: template
+    id: display_power_switch
+    name: "Dial Display Screen"
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
+    lambda: |-
+      return id(display_enabled);
+    turn_on_action:
+      - lambda: |-
+          id(display_enabled) = true;
+          id(round_display).set_brightness(id(display_brightness));
+          id(last_user_interaction_ms) = millis();
+      - lvgl.resume:
+      - script.execute: update_volume_ui
+      - script.execute: update_brightness_ui
+      - script.execute: update_blinds_ui
+      - script.execute: update_skylights_ui
+      - script.execute: update_input_ui
+      - script.execute: update_clock_pages
+    turn_off_action:
+      - lambda: |-
+          id(display_enabled) = false;
+          id(round_display).set_brightness(0);
+      - lvgl.pause:
+
+binary_sensor:
+  - platform: homeassistant
+    id: room_light_is_on
+    entity_id: light.example_room
+    internal: true
+    on_state:
+      then:
+        - script.execute: sync_room_brightness_to_display
+
+  - platform: viewesmart_knob_button
+    id: knob_button
+    name: "Knob Button"
+    debounce_time: 15ms
+
+    on_press:
+      then:
+        - script.execute: wake_display_if_needed
+        - script.execute: mark_display_activity
+        - script.execute: handle_page_menu_long_press
+
+    on_release:
+      then:
+        - script.stop: handle_page_menu_long_press
+
+    on_multi_click:
+      - timing:
+          - ON for at most 500ms
+          - OFF for at most 350ms
+          - ON for at most 500ms
+          - OFF for at least 50ms
+        then:
+          - script.execute: wake_display_if_needed
+          - script.execute: mark_display_activity
+          - script.execute: handle_knob_double_click
+      - timing:
+          - ON for at most 700ms
+          - OFF for at least 350ms
+        then:
+          - script.execute: wake_display_if_needed
+          - script.execute: mark_display_activity
+          - if:
+              condition:
+                lambda: "return id(page_menu_active);"
+              then:
+                - script.execute: show_page_menu_selection
+              else:
+                - script.execute: handle_knob_single_click
+
+touchscreen:
+  platform: viewesmart_touchscreen
+  id: board_touch
+  display: round_display
+  interrupt_pin: GPIO4
+  update_interval: 16ms
+  on_swipe_left:
+    then:
+      - lambda: "id(center_touch_tap_pending) = false;"
+      - lambda: "id(tv_touch_tap_pending) = false;"
+      - script.execute: mark_display_activity
+      - if:
+          condition:
+            lambda: "return !id(display_enabled);"
+          then:
+            - switch.turn_on: display_power_switch
+          else:
+            - logger.log: "SWIPE LEFT"
+            - if:
+                condition:
+                  lvgl.page.is_showing: volume_page
+                then:
+                  - script.execute: send_apple_tv_right
+  on_swipe_right:
+    then:
+      - lambda: "id(center_touch_tap_pending) = false;"
+      - lambda: "id(tv_touch_tap_pending) = false;"
+      - script.execute: mark_display_activity
+      - if:
+          condition:
+            lambda: "return !id(display_enabled);"
+          then:
+            - switch.turn_on: display_power_switch
+          else:
+            - logger.log: "SWIPE RIGHT"
+            - if:
+                condition:
+                  lvgl.page.is_showing: volume_page
+                then:
+                  - script.execute: send_apple_tv_left
+  on_swipe_up:
+    then:
+      - lambda: "id(center_touch_tap_pending) = false;"
+      - lambda: "id(tv_touch_tap_pending) = false;"
+      - script.execute: mark_display_activity
+      - if:
+          condition:
+            lambda: "return !id(display_enabled);"
+          then:
+            - switch.turn_on: display_power_switch
+          else:
+            - if:
+                condition:
+                  lambda: "return id(page_menu_active);"
+                then:
+                  - lambda: |-
+                      // Touch navigation is disabled in the page menu.
+                      return;
+                else:
+                  - logger.log: "SWIPE UP"
+                  - script.execute: cycle_mode_reverse
+  on_swipe_down:
+    then:
+      - lambda: "id(center_touch_tap_pending) = false;"
+      - lambda: "id(tv_touch_tap_pending) = false;"
+      - script.execute: mark_display_activity
+      - if:
+          condition:
+            lambda: "return !id(display_enabled);"
+          then:
+            - switch.turn_on: display_power_switch
+          else:
+            - if:
+                condition:
+                  lambda: "return id(page_menu_active);"
+                then:
+                  - lambda: |-
+                      // Touch navigation is disabled in the page menu.
+                      return;
+                else:
+                  - logger.log: "SWIPE DOWN"
+                  - script.execute: cycle_mode
+  on_touch:
+    then:
+      - script.execute: mark_display_activity
+      - lambda: "id(center_touch_tap_pending) = false;"
+      - lambda: "id(tv_touch_tap_pending) = false;"
+      - if:
+          condition:
+            lambda: "return !id(display_enabled);"
+          then:
+            - switch.turn_on: display_power_switch
+          else:
+            - logger.log:
+                format: "Touch x=%d y=%d"
+                args: ["touch.x", "touch.y"]
+            - if:
+                condition:
+                  lvgl.page.is_showing: tv_page
+                then:
+                  - lambda: |-
+                      const float dx = touch.x - 233.0f;
+                      const float dy = 233.0f - touch.y;
+                      float angle = atan2f(dy, dx) * 180.0f / 3.14159265f;
+                      if (angle < 0.0f) angle += 360.0f;
+                      if (angle >= 150.0f && angle < 270.0f) {
+                        id(tv_touch_sector) = 1;
+                      } else if (angle >= 30.0f && angle < 150.0f) {
+                        id(tv_touch_sector) = 2;
+                      } else {
+                        id(tv_touch_sector) = 3;
+                      }
+                      id(tv_touch_tap_pending) = true;
+                  - script.execute: handle_tv_touch_tap
+                else:
+                  - if:
+                      condition:
+                        lambda: |-
+                          return !id(page_menu_active) &&
+                                 id(touch_mode_switch_ready) &&
+                                 touch.x >= 160 && touch.x <= 306 &&
+                                 touch.y >= 160 && touch.y <= 306;
+                      then:
+                        - lambda: "id(center_touch_tap_pending) = true;"
+                        - script.execute: handle_center_touch_tap
+
+interval:
+  - interval: 30s
+    then:
+      - script.execute: sync_room_blinds_to_display
+      - script.execute: sync_skylights_to_display
+      - if:
+          condition:
+            lambda: |-
+              return id(display_enabled) &&
+                     (millis() - id(last_user_interaction_ms)) >= id(display_idle_timeout_ms);
+          then:
+            - switch.turn_off: display_power_switch
+
+text_sensor:
+  - platform: homeassistant
+    id: apple_tv_state
+    entity_id: media_player.example_apple_tv
+    internal: true
+    on_value:
+      then:
+        - lambda: "id(apple_tv_assumed_state_active) = false;"
+        - script.execute: update_apple_tv_transport_icon
+
+  - platform: homeassistant
+    id: receiver_source
+    entity_id: media_player.example_receiver
+    attribute: source
+    internal: true
+    on_value:
+      then:
+        - script.execute: sync_selected_source_to_display
+
+  - platform: homeassistant
+    id: room_blinds_state
+    entity_id: cover.example_blinds
+    internal: true
+    on_value:
+      then:
+        - script.execute: sync_room_blinds_to_display
+
+  - platform: homeassistant
+    id: skylights_state
+    entity_id: cover.example_skylights
+    internal: true
+    on_value:
+      then:
+        - script.execute: sync_skylights_to_display
+
+lvgl:
+  pages:
+    - id: volume_page
+      widgets:
+        - obj:
+            x: 0
+            y: 0
+            width: 100%
+            height: 100%
+            bg_color: 0x000000
+            bg_opa: COVER
+            radius: 0
+            pad_all: 0
+            border_width: 0
+
+        - arc:
+            id: volume_arc
+            align: CENTER
+            width: 465
+            height: 465
+            min_value: 0
+            max_value: 100
+            value: 100
+            adjustable: false
+            arc_width: 18
+            arc_rounded: true
+            arc_color: 0x2A2A2A
+            start_angle: 120
+            end_angle: 60
+            indicator:
+              arc_color: 0xFFFFFF
+              arc_width: 18
+              arc_rounded: true
+            knob:
+              bg_color: 0xD84DFF
+              radius: 20
+              pad_all: 4
+              shadow_width: 24
+              shadow_opa: 60%
+
+        - label:
+            id: volume_value
+            align: CENTER
+            y: 200
+            text: "50 %"
+            text_font: montserrat_48
+            text_color: 0xFFFFFF
+
+        - image:
+            id: volume_play_pause_badge
+            src: volume_prevplaynext_icon
+            align: CENTER
+
+    - id: brightness_page
+      widgets:
+        - obj:
+            x: 0
+            y: 0
+            width: 100%
+            height: 100%
+            bg_color: 0x000000
+            bg_opa: COVER
+            radius: 0
+            pad_all: 0
+            border_width: 0
+
+        - arc:
+            id: brightness_arc
+            align: CENTER
+            width: 465
+            height: 465
+            min_value: 0
+            max_value: 100
+            value: 100
+            adjustable: false
+            arc_width: 18
+            arc_rounded: true
+            arc_color: 0x2A2A2A
+            start_angle: 120
+            end_angle: 60
+            indicator:
+              arc_color: 0xFFC34D
+              arc_width: 18
+              arc_rounded: true
+            knob:
+              bg_color: 0xFFD36A
+              radius: 20
+              pad_all: 4
+              shadow_width: 24
+              shadow_opa: 60%
+
+        - label:
+            id: brightness_title
+            align: CENTER
+            y: 0
+            text: "LIGHTS"
+            text_font: montserrat_42
+            text_color: 0xFFFFFF
+
+        - label:
+            id: brightness_value
+            align: CENTER
+            y: 200
+            text: "90 %"
+            text_font: montserrat_48
+            text_color: 0xFFFFFF
+
+    - id: blinds_page
+      widgets:
+        - obj:
+            x: 0
+            y: 0
+            width: 100%
+            height: 100%
+            bg_color: 0x000000
+            bg_opa: COVER
+            radius: 0
+            pad_all: 0
+            border_width: 0
+
+        - arc:
+            id: blinds_arc_bg
+            align: CENTER
+            width: 465
+            height: 465
+            min_value: 0
+            max_value: 100
+            value: 100
+            adjustable: false
+            arc_width: 18
+            arc_rounded: true
+            arc_color: 0x2A2A2A
+            arc_opa: COVER
+            start_angle: 120
+            end_angle: 60
+            indicator:
+              arc_opa: TRANSP
+            knob:
+              bg_opa: TRANSP
+              border_width: 0
+              pad_all: 0
+              shadow_width: 0
+
+        - arc:
+            id: blinds_arc_left
+            align: CENTER
+            width: 465
+            height: 465
+            min_value: 0
+            max_value: 100
+            value: 100
+            adjustable: false
+            arc_width: 18
+            arc_rounded: true
+            arc_color: 0x84E05A
+            arc_opa: COVER
+            start_angle: 120
+            end_angle: 120
+            indicator:
+              arc_opa: TRANSP
+            knob:
+              bg_opa: TRANSP
+              border_width: 0
+              pad_all: 0
+              shadow_width: 0
+
+        - arc:
+            id: blinds_arc_right
+            align: CENTER
+            width: 465
+            height: 465
+            min_value: 0
+            max_value: 100
+            value: 100
+            adjustable: false
+            arc_width: 18
+            arc_rounded: true
+            arc_color: 0x84E05A
+            arc_opa: COVER
+            start_angle: 60
+            end_angle: 60
+            indicator:
+              arc_opa: TRANSP
+            knob:
+              bg_opa: TRANSP
+              border_width: 0
+              pad_all: 0
+              shadow_width: 0
+
+        - label:
+            id: blinds_title
+            align: CENTER
+            y: 0
+            text: "BLINDS"
+            text_font: montserrat_42
+            text_color: 0xFFFFFF
+
+        - label:
+            id: blinds_value
+            align: CENTER
+            y: 200
+            text: "90 %"
+            text_font: montserrat_48
+            text_color: 0xFFFFFF
+
+    - id: skylights_page
+      widgets:
+        - obj:
+            x: 0
+            y: 0
+            width: 100%
+            height: 100%
+            bg_color: 0x000000
+            bg_opa: COVER
+            radius: 0
+            pad_all: 0
+            border_width: 0
+
+        - arc:
+            id: skylights_arc_bg
+            align: CENTER
+            width: 465
+            height: 465
+            min_value: 0
+            max_value: 100
+            value: 100
+            adjustable: false
+            arc_width: 18
+            arc_rounded: true
+            arc_color: 0x2A2A2A
+            arc_opa: COVER
+            start_angle: 120
+            end_angle: 60
+            indicator:
+              arc_opa: TRANSP
+            knob:
+              bg_opa: TRANSP
+              border_width: 0
+              pad_all: 0
+              shadow_width: 0
+
+        - arc:
+            id: skylights_arc_left
+            align: CENTER
+            width: 465
+            height: 465
+            min_value: 0
+            max_value: 100
+            value: 100
+            adjustable: false
+            arc_width: 18
+            arc_rounded: true
+            arc_color: 0x58F3FF
+            arc_opa: COVER
+            start_angle: 120
+            end_angle: 120
+            indicator:
+              arc_opa: TRANSP
+            knob:
+              bg_opa: TRANSP
+              border_width: 0
+              pad_all: 0
+              shadow_width: 0
+
+        - arc:
+            id: skylights_arc_right
+            align: CENTER
+            width: 465
+            height: 465
+            min_value: 0
+            max_value: 100
+            value: 100
+            adjustable: false
+            arc_width: 18
+            arc_rounded: true
+            arc_color: 0x58F3FF
+            arc_opa: COVER
+            start_angle: 60
+            end_angle: 60
+            indicator:
+              arc_opa: TRANSP
+            knob:
+              bg_opa: TRANSP
+              border_width: 0
+              pad_all: 0
+              shadow_width: 0
+
+        - label:
+            id: skylights_title
+            align: CENTER
+            y: 0
+            text: "SKYLIGHTS"
+            text_font: montserrat_42
+            text_color: 0xFFFFFF
+
+        - label:
+            id: skylights_value
+            align: CENTER
+            y: 200
+            text: "90 %"
+            text_font: montserrat_48
+            text_color: 0xFFFFFF
+
+    - id: input_page
+      widgets:
+        - obj:
+            x: 0
+            y: 0
+            width: 100%
+            height: 100%
+            bg_color: 0x000000
+            bg_opa: COVER
+            radius: 0
+            pad_all: 0
+            border_width: 0
+
+        - arc:
+            id: input_arc_1_bg
+            align: CENTER
+            width: 465
+            height: 465
+            min_value: 0
+            max_value: 100
+            value: 100
+            adjustable: false
+            arc_width: 18
+            arc_rounded: true
+            arc_color: 0x2A2A2A
+            arc_opa: COVER
+            start_angle: 90
+            end_angle: 210
+            indicator:
+              arc_opa: TRANSP
+            knob:
+              bg_opa: TRANSP
+              border_width: 0
+              pad_all: 0
+              shadow_width: 0
+
+        - arc:
+            id: input_arc_2_bg
+            align: CENTER
+            width: 465
+            height: 465
+            min_value: 0
+            max_value: 100
+            value: 100
+            adjustable: false
+            arc_width: 18
+            arc_rounded: true
+            arc_color: 0x2A2A2A
+            arc_opa: COVER
+            start_angle: 210
+            end_angle: 330
+            indicator:
+              arc_opa: TRANSP
+            knob:
+              bg_opa: TRANSP
+              border_width: 0
+              pad_all: 0
+              shadow_width: 0
+
+        - arc:
+            id: input_arc_3_bg
+            align: CENTER
+            width: 465
+            height: 465
+            min_value: 0
+            max_value: 100
+            value: 100
+            adjustable: false
+            arc_width: 18
+            arc_rounded: true
+            arc_color: 0x2A2A2A
+            arc_opa: COVER
+            start_angle: 330
+            end_angle: 90
+            indicator:
+              arc_opa: TRANSP
+            knob:
+              bg_opa: TRANSP
+              border_width: 0
+              pad_all: 0
+              shadow_width: 0
+
+        - arc:
+            id: input_arc_1_active
+            align: CENTER
+            width: 465
+            height: 465
+            min_value: 0
+            max_value: 100
+            value: 100
+            adjustable: false
+            arc_width: 18
+            arc_rounded: true
+            arc_color: 0x7005FC
+            arc_opa: COVER
+            start_angle: 90
+            end_angle: 210
+            indicator:
+              arc_opa: TRANSP
+            knob:
+              bg_opa: TRANSP
+              border_width: 0
+              pad_all: 0
+              shadow_width: 0
+
+        - arc:
+            id: input_arc_2_active
+            align: CENTER
+            width: 465
+            height: 465
+            min_value: 0
+            max_value: 100
+            value: 100
+            adjustable: false
+            arc_width: 18
+            arc_rounded: true
+            arc_color: 0x7005FC
+            arc_opa: TRANSP
+            start_angle: 210
+            end_angle: 330
+            indicator:
+              arc_opa: TRANSP
+            knob:
+              bg_opa: TRANSP
+              border_width: 0
+              pad_all: 0
+              shadow_width: 0
+
+        - arc:
+            id: input_arc_3_active
+            align: CENTER
+            width: 465
+            height: 465
+            min_value: 0
+            max_value: 100
+            value: 100
+            adjustable: false
+            arc_width: 18
+            arc_rounded: true
+            arc_color: 0x7005FC
+            arc_opa: TRANSP
+            start_angle: 330
+            end_angle: 90
+            indicator:
+              arc_opa: TRANSP
+            knob:
+              bg_opa: TRANSP
+              border_width: 0
+              pad_all: 0
+              shadow_width: 0
+
+        - line:
+            id: input_divider_bottom
+            points:
+              - 233, 413
+              - 233, 313
+            line_width: 4
+            line_color: 0x1E1E1E
+            line_rounded: false
+
+        - line:
+            id: input_divider_left
+            points:
+              - 77, 144
+              - 136, 178
+            line_width: 4
+            line_color: 0x1E1E1E
+            line_rounded: false
+
+        - line:
+            id: input_divider_right
+            points:
+              - 389, 144
+              - 330, 178
+            line_width: 4
+            line_color: 0x1E1E1E
+            line_rounded: false
+
+        - label:
+            id: input_title
+            align: CENTER
+            y: 0
+            text: "SOURCE"
+            text_font: montserrat_42
+            text_color: 0xFFFFFF
+
+        - label:
+            id: input_label_1
+            align: CENTER
+            x: -117
+            y: 71
+            text: "PS"
+            text_font: montserrat_28
+            text_color: 0xFFFFFF
+
+        - label:
+            id: input_label_2
+            align: CENTER
+            x: 0
+            y: -120
+            text: "Apple TV"
+            text_font: montserrat_28
+            text_color: 0x7A7A7A
+
+        - label:
+            id: input_label_3
+            align: CENTER
+            x: 117
+            y: 71
+            text: "NVR"
+            text_font: montserrat_28
+            text_color: 0x7A7A7A
+
+    - id: tv_page
+      widgets:
+        - obj:
+            x: 0
+            y: 0
+            width: 100%
+            height: 100%
+            bg_color: 0x000000
+            bg_opa: COVER
+            radius: 0
+            pad_all: 0
+            border_width: 0
+
+        - arc:
+            id: tv_arc_1_bg
+            align: CENTER
+            width: 465
+            height: 465
+            min_value: 0
+            max_value: 100
+            value: 100
+            adjustable: false
+            arc_width: 18
+            arc_rounded: true
+            arc_color: 0xFF4FA3
+            arc_opa: COVER
+            start_angle: 90
+            end_angle: 210
+            indicator:
+              arc_opa: TRANSP
+            knob:
+              bg_opa: TRANSP
+              border_width: 0
+              pad_all: 0
+              shadow_width: 0
+
+        - arc:
+            id: tv_arc_2_bg
+            align: CENTER
+            width: 465
+            height: 465
+            min_value: 0
+            max_value: 100
+            value: 100
+            adjustable: false
+            arc_width: 18
+            arc_rounded: true
+            arc_color: 0xFF4FA3
+            arc_opa: COVER
+            start_angle: 210
+            end_angle: 330
+            indicator:
+              arc_opa: TRANSP
+            knob:
+              bg_opa: TRANSP
+              border_width: 0
+              pad_all: 0
+              shadow_width: 0
+
+        - arc:
+            id: tv_arc_3_bg
+            align: CENTER
+            width: 465
+            height: 465
+            min_value: 0
+            max_value: 100
+            value: 100
+            adjustable: false
+            arc_width: 18
+            arc_rounded: true
+            arc_color: 0xFF4FA3
+            arc_opa: COVER
+            start_angle: 330
+            end_angle: 90
+            indicator:
+              arc_opa: TRANSP
+            knob:
+              bg_opa: TRANSP
+              border_width: 0
+              pad_all: 0
+              shadow_width: 0
+
+        - line:
+            id: tv_divider_bottom
+            points:
+              - 233, 413
+              - 233, 313
+            line_width: 4
+            line_color: 0x1E1E1E
+            line_rounded: false
+
+        - line:
+            id: tv_divider_left
+            points:
+              - 77, 144
+              - 136, 178
+            line_width: 4
+            line_color: 0x1E1E1E
+            line_rounded: false
+
+        - line:
+            id: tv_divider_right
+            points:
+              - 389, 144
+              - 330, 178
+            line_width: 4
+            line_color: 0x1E1E1E
+            line_rounded: false
+
+        - label:
+            id: tv_title
+            align: CENTER
+            y: 0
+            text: "TV"
+            text_font: montserrat_42
+            text_color: 0xFFFFFF
+
+        - label:
+            id: tv_label_1
+            align: CENTER
+            x: -107
+            y: 71
+            text: "MENU"
+            text_font: montserrat_28
+            text_color: 0xFFFFFF
+
+        - label:
+            id: tv_label_2
+            align: CENTER
+            x: 0
+            y: -120
+            text: "POWER"
+            text_font: montserrat_28
+            text_color: 0xFFFFFF
+
+        - label:
+            id: tv_label_3
+            align: CENTER
+            x: 117
+            y: 71
+            text: "OK"
+            text_font: montserrat_28
+            text_color: 0xFFFFFF
+
+    - id: analog_clock_page
+      widgets:
+        - obj:
+            x: 0
+            y: 0
+            width: 100%
+            height: 100%
+            bg_color: 0x000000
+            bg_opa: COVER
+            radius: 0
+            pad_all: 0
+            border_width: 0
+
+        - arc:
+            id: analog_clock_ring
+            align: CENTER
+            width: 454
+            height: 454
+            min_value: 0
+            max_value: 100
+            value: 100
+            adjustable: false
+            arc_width: 8
+            arc_rounded: true
+            arc_color: 0x2A2A2A
+            arc_opa: TRANSP
+            start_angle: 0
+            end_angle: 360
+            indicator:
+              arc_opa: TRANSP
+            knob:
+              bg_opa: TRANSP
+              border_width: 0
+              pad_all: 0
+              shadow_width: 0
+
+        - line:
+            points:
+              - 233, 10
+              - 233, 36
+            line_width: 4
+            line_color: 0xFFFFFF
+            line_rounded: true
+
+        - line:
+            points:
+              - 256, 11
+              - 255, 23
+            line_width: 2
+            line_color: 0x5A5A5A
+            line_rounded: true
+
+        - line:
+            points:
+              - 279, 15
+              - 277, 27
+            line_width: 2
+            line_color: 0x5A5A5A
+            line_rounded: true
+
+        - line:
+            points:
+              - 302, 21
+              - 298, 32
+            line_width: 2
+            line_color: 0x5A5A5A
+            line_rounded: true
+
+        - line:
+            points:
+              - 324, 29
+              - 319, 40
+            line_width: 2
+            line_color: 0x5A5A5A
+            line_rounded: true
+
+        - line:
+            points:
+              - 344, 40
+              - 332, 62
+            line_width: 4
+            line_color: 0xFFFFFF
+            line_rounded: true
+
+        - line:
+            points:
+              - 364, 53
+              - 357, 62
+            line_width: 2
+            line_color: 0x5A5A5A
+            line_rounded: true
+
+        - line:
+            points:
+              - 382, 67
+              - 374, 76
+            line_width: 2
+            line_color: 0x5A5A5A
+            line_rounded: true
+
+        - line:
+            points:
+              - 399, 84
+              - 390, 92
+            line_width: 2
+            line_color: 0x5A5A5A
+            line_rounded: true
+
+        - line:
+            points:
+              - 413, 102
+              - 404, 109
+            line_width: 2
+            line_color: 0x5A5A5A
+            line_rounded: true
+
+        - line:
+            points:
+              - 426, 122
+              - 404, 134
+            line_width: 4
+            line_color: 0xFFFFFF
+            line_rounded: true
+
+        - line:
+            points:
+              - 437, 142
+              - 426, 147
+            line_width: 2
+            line_color: 0x5A5A5A
+            line_rounded: true
+
+        - line:
+            points:
+              - 445, 164
+              - 434, 168
+            line_width: 2
+            line_color: 0x5A5A5A
+            line_rounded: true
+
+        - line:
+            points:
+              - 451, 187
+              - 439, 189
+            line_width: 2
+            line_color: 0x5A5A5A
+            line_rounded: true
+
+        - line:
+            points:
+              - 455, 210
+              - 443, 211
+            line_width: 2
+            line_color: 0x5A5A5A
+            line_rounded: true
+
+        - line:
+            points:
+              - 456, 233
+              - 430, 233
+            line_width: 4
+            line_color: 0xFFFFFF
+            line_rounded: true
+
+        - line:
+            points:
+              - 455, 256
+              - 443, 255
+            line_width: 2
+            line_color: 0x5A5A5A
+            line_rounded: true
+
+        - line:
+            points:
+              - 451, 279
+              - 439, 277
+            line_width: 2
+            line_color: 0x5A5A5A
+            line_rounded: true
+
+        - line:
+            points:
+              - 445, 302
+              - 434, 298
+            line_width: 2
+            line_color: 0x5A5A5A
+            line_rounded: true
+
+        - line:
+            points:
+              - 437, 324
+              - 426, 319
+            line_width: 2
+            line_color: 0x5A5A5A
+            line_rounded: true
+
+        - line:
+            points:
+              - 426, 344
+              - 404, 332
+            line_width: 4
+            line_color: 0xFFFFFF
+            line_rounded: true
+
+        - line:
+            points:
+              - 413, 364
+              - 404, 357
+            line_width: 2
+            line_color: 0x5A5A5A
+            line_rounded: true
+
+        - line:
+            points:
+              - 399, 382
+              - 390, 374
+            line_width: 2
+            line_color: 0x5A5A5A
+            line_rounded: true
+
+        - line:
+            points:
+              - 382, 399
+              - 374, 390
+            line_width: 2
+            line_color: 0x5A5A5A
+            line_rounded: true
+
+        - line:
+            points:
+              - 364, 413
+              - 357, 404
+            line_width: 2
+            line_color: 0x5A5A5A
+            line_rounded: true
+
+        - line:
+            points:
+              - 344, 426
+              - 332, 404
+            line_width: 4
+            line_color: 0xFFFFFF
+            line_rounded: true
+
+        - line:
+            points:
+              - 324, 437
+              - 319, 426
+            line_width: 2
+            line_color: 0x5A5A5A
+            line_rounded: true
+
+        - line:
+            points:
+              - 302, 445
+              - 298, 434
+            line_width: 2
+            line_color: 0x5A5A5A
+            line_rounded: true
+
+        - line:
+            points:
+              - 279, 451
+              - 277, 439
+            line_width: 2
+            line_color: 0x5A5A5A
+            line_rounded: true
+
+        - line:
+            points:
+              - 256, 455
+              - 255, 443
+            line_width: 2
+            line_color: 0x5A5A5A
+            line_rounded: true
+
+        - line:
+            points:
+              - 233, 456
+              - 233, 430
+            line_width: 4
+            line_color: 0xFFFFFF
+            line_rounded: true
+
+        - line:
+            points:
+              - 210, 455
+              - 211, 443
+            line_width: 2
+            line_color: 0x5A5A5A
+            line_rounded: true
+
+        - line:
+            points:
+              - 187, 451
+              - 189, 439
+            line_width: 2
+            line_color: 0x5A5A5A
+            line_rounded: true
+
+        - line:
+            points:
+              - 164, 445
+              - 168, 434
+            line_width: 2
+            line_color: 0x5A5A5A
+            line_rounded: true
+
+        - line:
+            points:
+              - 142, 437
+              - 147, 426
+            line_width: 2
+            line_color: 0x5A5A5A
+            line_rounded: true
+
+        - line:
+            points:
+              - 122, 426
+              - 135, 404
+            line_width: 4
+            line_color: 0xFFFFFF
+            line_rounded: true
+
+        - line:
+            points:
+              - 102, 413
+              - 109, 404
+            line_width: 2
+            line_color: 0x5A5A5A
+            line_rounded: true
+
+        - line:
+            points:
+              - 84, 399
+              - 92, 390
+            line_width: 2
+            line_color: 0x5A5A5A
+            line_rounded: true
+
+        - line:
+            points:
+              - 67, 382
+              - 76, 374
+            line_width: 2
+            line_color: 0x5A5A5A
+            line_rounded: true
+
+        - line:
+            points:
+              - 53, 364
+              - 62, 357
+            line_width: 2
+            line_color: 0x5A5A5A
+            line_rounded: true
+
+        - line:
+            points:
+              - 40, 344
+              - 62, 332
+            line_width: 4
+            line_color: 0xFFFFFF
+            line_rounded: true
+
+        - line:
+            points:
+              - 29, 324
+              - 40, 319
+            line_width: 2
+            line_color: 0x5A5A5A
+            line_rounded: true
+
+        - line:
+            points:
+              - 21, 302
+              - 32, 298
+            line_width: 2
+            line_color: 0x5A5A5A
+            line_rounded: true
+
+        - line:
+            points:
+              - 15, 279
+              - 27, 277
+            line_width: 2
+            line_color: 0x5A5A5A
+            line_rounded: true
+
+        - line:
+            points:
+              - 11, 256
+              - 23, 255
+            line_width: 2
+            line_color: 0x5A5A5A
+            line_rounded: true
+
+        - line:
+            points:
+              - 10, 233
+              - 36, 233
+            line_width: 4
+            line_color: 0xFFFFFF
+            line_rounded: true
+
+        - line:
+            points:
+              - 11, 210
+              - 23, 211
+            line_width: 2
+            line_color: 0x5A5A5A
+            line_rounded: true
+
+        - line:
+            points:
+              - 15, 187
+              - 27, 189
+            line_width: 2
+            line_color: 0x5A5A5A
+            line_rounded: true
+
+        - line:
+            points:
+              - 21, 164
+              - 32, 168
+            line_width: 2
+            line_color: 0x5A5A5A
+            line_rounded: true
+
+        - line:
+            points:
+              - 29, 142
+              - 40, 147
+            line_width: 2
+            line_color: 0x5A5A5A
+            line_rounded: true
+
+        - line:
+            points:
+              - 40, 121
+              - 62, 134
+            line_width: 4
+            line_color: 0xFFFFFF
+            line_rounded: true
+
+        - line:
+            points:
+              - 53, 102
+              - 62, 109
+            line_width: 2
+            line_color: 0x5A5A5A
+            line_rounded: true
+
+        - line:
+            points:
+              - 67, 84
+              - 76, 92
+            line_width: 2
+            line_color: 0x5A5A5A
+            line_rounded: true
+
+        - line:
+            points:
+              - 84, 67
+              - 92, 76
+            line_width: 2
+            line_color: 0x5A5A5A
+            line_rounded: true
+
+        - line:
+            points:
+              - 102, 53
+              - 109, 62
+            line_width: 2
+            line_color: 0x5A5A5A
+            line_rounded: true
+
+        - line:
+            points:
+              - 121, 40
+              - 134, 62
+            line_width: 4
+            line_color: 0xFFFFFF
+            line_rounded: true
+
+        - line:
+            points:
+              - 142, 29
+              - 147, 40
+            line_width: 2
+            line_color: 0x5A5A5A
+            line_rounded: true
+
+        - line:
+            points:
+              - 164, 21
+              - 168, 32
+            line_width: 2
+            line_color: 0x5A5A5A
+            line_rounded: true
+
+        - line:
+            points:
+              - 187, 15
+              - 189, 27
+            line_width: 2
+            line_color: 0x5A5A5A
+            line_rounded: true
+
+        - line:
+            points:
+              - 210, 11
+              - 211, 23
+            line_width: 2
+            line_color: 0x5A5A5A
+            line_rounded: true
+
+        - line:
+            id: analog_hour_hand
+            points:
+              - 233, 233
+              - 233, 135
+            line_width: 8
+            line_color: 0xFFFFFF
+            line_rounded: true
+
+        - line:
+            id: analog_minute_hand
+            points:
+              - 233, 233
+              - 233, 83
+            line_width: 5
+            line_color: 0xFFFFFF
+            line_rounded: true
+
+        - obj:
+            align: CENTER
+            width: 16
+            height: 16
+            radius: 8
+            bg_color: 0xFFFFFF
+            bg_opa: COVER
+            border_width: 0
+
+        - label:
+            align: CENTER
+            x: 0
+            y: -154
+            text: "12"
+            text_font: montserrat_28
+            text_color: 0xFFFFFF
+
+        - label:
+            align: CENTER
+            x: 149
+            y: 0
+            text: "3"
+            text_font: montserrat_28
+            text_color: 0xFFFFFF
+
+        - label:
+            align: CENTER
+            x: 0
+            y: 154
+            text: "6"
+            text_font: montserrat_28
+            text_color: 0xFFFFFF
+
+        - label:
+            align: CENTER
+            x: -149
+            y: 0
+            text: "9"
+            text_font: montserrat_28
+            text_color: 0xFFFFFF
+
+    - id: digital_clock_page
+      widgets:
+        - obj:
+            x: 0
+            y: 0
+            width: 100%
+            height: 100%
+            bg_color: 0x000000
+            bg_opa: COVER
+            radius: 0
+            pad_all: 0
+            border_width: 0
+
+        - label:
+            id: digital_clock_value
+            align: CENTER
+            y: -8
+            text: "--:--"
+            text_font: digital_clock_font_96
+            text_color: 0xFFFFFF
+            width: 100%
+            text_align: CENTER
+
+    - id: page_menu_page
+      widgets:
+        - obj:
+            x: 0
+            y: 0
+            width: 100%
+            height: 100%
+            bg_color: 0x000000
+            bg_opa: COVER
+            radius: 0
+            pad_all: 0
+            border_width: 0
+
+        - line:
+            points:
+              - 217, 50
+              - 233, 34
+              - 249, 50
+            line_width: 4
+            line_color: 0xBDBDBD
+            line_rounded: true
+
+        - line:
+            points:
+              - 217, 416
+              - 233, 432
+              - 249, 416
+            line_width: 4
+            line_color: 0xBDBDBD
+            line_rounded: true
+
+        - line:
+            points:
+              - 0, 196
+              - 466, 196
+            line_width: 3
+            line_color: 0x242424
+            line_rounded: true
+
+        - line:
+            points:
+              - 0, 270
+              - 466, 270
+            line_width: 3
+            line_color: 0x242424
+            line_rounded: true
+
+        - obj:
+            id: page_menu_list_track
+            x: 0
+            y: 0
+            width: 466
+            height: 466
+            bg_opa: TRANSP
+            radius: 0
+            pad_all: 0
+            border_width: 0
+            widgets:
+              - label:
+                  id: page_menu_item_minus_3
+                  hidden: true
+                  align: CENTER
+                  y: -216
+                  width: 400
+                  text: "TV"
+                  text_align: CENTER
+                  text_font: montserrat_24
+                  text_color: 0x242424
+
+              - label:
+                  id: page_menu_item_minus_2
+                  align: CENTER
+                  y: -144
+                  width: 400
+                  text: "ANALOG CLOCK"
+                  text_align: CENTER
+                  text_font: montserrat_28
+                  text_color: 0x454545
+
+              - label:
+                  id: page_menu_item_minus_1
+                  align: CENTER
+                  y: -72
+                  width: 400
+                  text: "DIGITAL CLOCK"
+                  text_align: CENTER
+                  text_font: montserrat_32
+                  text_color: 0x777777
+
+              - label:
+                  id: page_menu_item_selected
+                  align: CENTER
+                  y: 0
+                  width: 420
+                  text: "VOLUME"
+                  text_align: CENTER
+                  text_font: montserrat_42
+                  text_color: 0xFFFFFF
+
+              - label:
+                  id: page_menu_item_plus_1
+                  align: CENTER
+                  y: 72
+                  width: 400
+                  text: "LIGHTS"
+                  text_align: CENTER
+                  text_font: montserrat_32
+                  text_color: 0x777777
+
+              - label:
+                  id: page_menu_item_plus_2
+                  align: CENTER
+                  y: 144
+                  width: 400
+                  text: "BLINDS"
+                  text_align: CENTER
+                  text_font: montserrat_28
+                  text_color: 0x454545
+
+              - label:
+                  id: page_menu_item_plus_3
+                  hidden: true
+                  align: CENTER
+                  y: 216
+                  width: 400
+                  text: "SKYLIGHTS"
+                  text_align: CENTER
+                  text_font: montserrat_24
+                  text_color: 0x242424

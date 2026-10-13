@@ -1,0 +1,8 @@
+.venv/
+.platformio/
+.platformio-core/
+**/.esphome/
+__pycache__/
+*.pyc
+.DS_Store
+secrets.yaml
